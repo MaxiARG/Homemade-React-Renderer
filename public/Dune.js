@@ -4,13 +4,13 @@ function _objectSpread(e) { for (var r = 1; r < arguments.length; r++) { var t =
 function _defineProperty(e, r, t) { return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: !0, configurable: !0, writable: !0 }) : e[r] = t, e; }
 function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol" == _typeof(i) ? i : i + ""; }
 function _toPrimitive(t, r) { if ("object" != _typeof(t) || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != _typeof(i)) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
-// aun no implementada
-
 var wipFiber = null;
 var hookIndex = null;
 var nextUnitOfWork = null;
 var wipRoot = null;
 var currentRoot = null;
+var deletions = null; //So we need an array to keep track of the nodes we want to remove.
+
 export function createElement(type, props) {
   for (var _len = arguments.length, children = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
     children[_key - 2] = arguments[_key];
@@ -36,181 +36,9 @@ function createTextElement(text) {
     }
   };
 }
-
-//So we need an array to keep track of the nodes we want to remove.
-var deletions = [];
-function reconcileChildren(wipFiber, elements) {
-  var index = 0;
-  var prevSibling = null;
-  var oldFiber = wipFiber.alternate && wipFiber.alternate.child;
-  //Recorre desde el Root hacia los children
-  //Cuando se acaban los children, busca nodos hermanos
-  // Cuando se acaban los hermanos busca hermanos de su parent 
-  // Y si se acaban busca hermanos de su abuelo y asi hasta volver al root.
-
-  while (index < elements.length || oldFiber != null) {
-    if (!elements || !Array.isArray(elements)) {
-      elements = [];
-    }
-    var element = elements[index];
-    var newFiber = null;
-    //deletions = []
-    var sameType = oldFiber && element && element.type == oldFiber.type;
-
-    // TODO compare oldFiber to element
-    /*     We iterate at the same time over the children of the old fiber (wipFiber.alternate) and the array of elements we want to reconcile.
-    If we ignore all the boilerplate needed to iterate over an array and a linked list at the same time, we are left with what matters most inside this while: oldFiber and element. The element is the thing we want to render to the DOM and the oldFiber is what we rendered the last time.
-    We need to compare them to see if there’s any change we need to apply to the DOM.
-     */
-    // Here React also uses keys, that makes a better reconciliation. For example, it detects when children change places in the element array.
-    if (sameType) {
-      // TODO update the node
-      //When the old fiber and the element have the same type, we create a new fiber keeping the DOM node from the old fiber and the props from the element.
-      // We also add a new property to the fiber: the effectTag. We’ll use this property later, during the commit phase.
-      newFiber = {
-        type: oldFiber.type,
-        props: element.props,
-        dom: oldFiber.dom,
-        parent: wipFiber,
-        alternate: oldFiber,
-        effectTag: "UPDATE"
-      };
-    }
-    if (element && !sameType) {
-      // TODO add this node
-      // Then for the case where the element needs a new DOM node we tag the new fiber with the PLACEMENT effect tag.
-      newFiber = {
-        type: element.type,
-        props: element.props,
-        dom: null,
-        parent: wipFiber,
-        alternate: null,
-        effectTag: "PLACEMENT"
-      };
-    }
-    if (oldFiber && !sameType) {
-      // TODO delete the oldFiber's node
-      //And for the case where we need to delete the node, we don’t have a new fiber so we add the effect tag to the old fiber.
-      // But when we commit the fiber tree to the DOM we do it from the work in progress root, which doesn’t have the old fibers.
-      oldFiber.effectTag = "DELETION";
-      deletions.push(oldFiber);
-    }
-
-    /*     const newFiber = {
-          type: element.type,
-          props: element.props,
-          parent: wipFiber,
-          dom: null,
-        } */
-
-    //And we add it to the fiber tree setting it either as a child or as a sibling, depending on whether it’s the first child or not.
-    if (newFiber) {
-      if (index === 0) {
-        wipFiber.child = newFiber;
-      } else {
-        prevSibling.sibling = newFiber;
-      }
-      prevSibling = newFiber;
-    }
-    // porque es una double linked list!
-    prevSibling = newFiber;
-    index++;
-  }
-}
-function updateHostComponent(fiber) {
-  if (!fiber.dom) {
-    fiber.dom = createDom(fiber);
-  }
-  reconcileChildren(fiber, fiber.props.children);
-}
-//When the function component calls useState, we check if we have an old hook. We check in the alternate of the fiber using the hook index.
-// If we have an old hook, we copy the state from the old hook to the new hook, if we don’t we initialize the state.
-// Then we add the new hook to the fiber, increment the hook index by one, and return the state.
-function useState(initial) {
-  if (!wipFiber || !wipFiber.hooks) {
-    throw new Error("Hooks can only be used inside function components");
-  }
-  var oldHook = wipFiber.alternate && wipFiber.alternate.hooks && wipFiber.alternate.hooks[hookIndex];
-  var hook = {
-    state: oldHook ? oldHook.state : initial,
-    queue: []
-  };
-  //we haven’t run the action yet, We do it the next time we are rendering the component, we get all the actions from the old hook queue, and then apply them one by one to the new hook state, so when we return the state it’s updated.
-  var actions = oldHook ? oldHook.queue : [];
-  actions.forEach(function (action) {
-    hook.state = action(hook.state);
-  });
-  //   useState should also return a function to update the state, so we define a setState function that receives an action (for the Counter example this action is the function that increments the state by one).
-  // We push that action to a queue we added to the hook.
-  // And then we do something similar to what we did in the render function, set a new work in progress root as the next unit of work so the work loop can start a new render phase.
-  var setState = function setState(action) {
-    hook.queue.push(action);
-    wipRoot = {
-      dom: currentRoot.dom,
-      props: currentRoot.props,
-      alternate: currentRoot
-    };
-    nextUnitOfWork = wipRoot; //Esto hace que se ejecute un nuevo render
-    deletions = [];
-  };
-  wipFiber.hooks.push(hook);
-  hookIndex++;
-  return [hook.state, setState];
-}
-
-//And in updateFunctionComponent we run the function to get the children.
-// For our example, here the fiber.type is the App function and when we run it, it returns the h1 element.
-// Then, once we have the children, the reconciliation works in the same way, we don’t need to change anything there.
-function updateFunctionComponent(fiber) {
-  //We need to initialize some global variables before calling the function component so we can use them inside of the useState function.
-  //First we set the work in progress fiber.
-  //We also add a hooks array to the fiber to support calling useState several times in the same component. And we keep track of the current hook index.
-  wipFiber = fiber;
-  hookIndex = 0;
-  wipFiber.hooks = [];
-  var children = [fiber.type(fiber.props)];
-  reconcileChildren(fiber, children);
-}
-
-//Function components are differents in two ways:
-// the fiber from a function component doesn’t have a DOM node
-// and the children come from running the function instead of getting them directly from the props
-
-function performUnitOfWork(fiber) {
-  // TODO: agregar el dom node
-  var isFunctionComponent = fiber.type instanceof Function;
-  if (isFunctionComponent) {
-    updateFunctionComponent(fiber);
-  } else {
-    updateHostComponent(fiber);
-  }
-  // TODO: return  next unit of work
-  //Finally we search for the next unit of work. We first try with the child, then with the sibling, then with the uncle, and so on.
-  if (fiber.child) {
-    return fiber.child;
-  }
-  var nextFiber = fiber;
-  while (nextFiber) {
-    if (nextFiber.sibling) {
-      return nextFiber.sibling;
-    }
-    nextFiber = nextFiber.parent;
-  }
-}
 function createDom(fiber) {
   var dom = fiber.type == "TEXT_ELEMENT" ? document.createTextNode("") : document.createElement(fiber.type);
-  var isProperty = function isProperty(key) {
-    return key !== "children";
-  };
-  Object.keys(fiber.props).filter(isProperty).forEach(function (name) {
-    dom[name] = fiber.props[name];
-  });
-
-  // Set event listeners
-  Object.keys(fiber.props).filter(isEvent).forEach(function (name) {
-    var eventType = name.toLowerCase().substring(2); // "onClick" -> "click"
-    dom.addEventListener(eventType, fiber.props[name]);
-  });
+  updateDom(dom, {}, fiber.props);
   return dom;
 }
 var isEvent = function isEvent(key) {
@@ -259,6 +87,13 @@ function updateDom(dom, prevProps, nextProps) {
     dom.addEventListener(eventType, nextProps[name]);
   });
 }
+function commitRoot() {
+  //And then, when we are commiting the changes to the DOM, we also use the fibers from that array.
+  deletions.forEach(commitWork);
+  commitWork(wipRoot.child);
+  currentRoot = wipRoot;
+  wipRoot = null;
+}
 function commitWork(fiber) {
   if (!fiber) {
     return;
@@ -293,33 +128,6 @@ function commitDeletion(fiber, domParent) {
     commitDeletion(fiber.child, domParent);
   }
 }
-function commitRoot() {
-  //And then, when we are commiting the changes to the DOM, we also use the fibers from that array.
-  deletions.forEach(commitWork);
-  commitWork(wipRoot.child);
-  currentRoot = wipRoot;
-  wipRoot = null;
-}
-
-//Sali del Root y regrese. Significa que ya recorri todos los nodos.
-//And once we finish all the work (we know it because there isn’t a next unit of work) we commit the whole fiber tree to the DOM.
-/* if (!nextUnitOfWork && wipRoot) {
-  commitRoot()
-} */
-
-//aca es donde se ejecuta el workloop cuando el navegador esta idle
-requestIdleCallback(workLoop);
-function workLoop(deadline) {
-  var shouldYield = false;
-  while (nextUnitOfWork && !shouldYield) {
-    nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
-    shouldYield = deadline.timeRemaining() < 1;
-  }
-  if (!nextUnitOfWork && wipRoot) {
-    commitRoot();
-  }
-  requestIdleCallback(workLoop);
-}
 
 //We have another problem here.
 // We are adding a new node to the DOM each time we work on an element. And, remember, the browser could interrupt our work before we finish rendering the whole tree. In that case, the user will see an incomplete UI. And we don’t want that.
@@ -343,6 +151,165 @@ export function render(element, container) {
 // So we need to save a reference to that “last fiber tree we committed to the DOM” after we finish the commit. We call it currentRoot.
 // We also add the alternate property to every fiber. This property is a link to the old fiber, the fiber that we committed to the DOM in the previous commit phase.
 
+function workLoop(deadline) {
+  var shouldYield = false;
+  while (nextUnitOfWork && !shouldYield) {
+    nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
+    shouldYield = deadline.timeRemaining() < 1;
+  }
+  if (!nextUnitOfWork && wipRoot) {
+    commitRoot();
+  }
+  requestIdleCallback(workLoop);
+}
+
+//aca es donde se ejecuta el workloop cuando el navegador esta idle
+requestIdleCallback(workLoop);
+
+//Function components are differents in two ways:
+// the fiber from a function component doesn’t have a DOM node
+// and the children come from running the function instead of getting them directly from the props
+
+function performUnitOfWork(fiber) {
+  // TODO: agregar el dom node
+  var isFunctionComponent = fiber.type instanceof Function;
+  if (isFunctionComponent) {
+    updateFunctionComponent(fiber);
+  } else {
+    updateHostComponent(fiber);
+  }
+  // TODO: return  next unit of work
+  //Finally we search for the next unit of work. We first try with the child, then with the sibling, then with the uncle, and so on.
+  if (fiber.child) {
+    return fiber.child;
+  }
+  var nextFiber = fiber;
+  while (nextFiber) {
+    if (nextFiber.sibling) {
+      return nextFiber.sibling;
+    }
+    nextFiber = nextFiber.parent;
+  }
+}
+
+//And in updateFunctionComponent we run the function to get the children.
+// For our example, here the fiber.type is the App function and when we run it, it returns the h1 element.
+// Then, once we have the children, the reconciliation works in the same way, we don’t need to change anything there.
+function updateFunctionComponent(fiber) {
+  //We need to initialize some global variables before calling the function component so we can use them inside of the useState function.
+  //First we set the work in progress fiber.
+  //We also add a hooks array to the fiber to support calling useState several times in the same component. And we keep track of the current hook index.
+  wipFiber = fiber;
+  hookIndex = 0;
+  wipFiber.hooks = [];
+  var children = [fiber.type(fiber.props)];
+  reconcileChildren(fiber, children);
+}
+
+//When the function component calls useState, we check if we have an old hook. We check in the alternate of the fiber using the hook index.
+// If we have an old hook, we copy the state from the old hook to the new hook, if we don’t we initialize the state.
+// Then we add the new hook to the fiber, increment the hook index by one, and return the state.
+function useState(initial) {
+  var oldHook = wipFiber.alternate && wipFiber.alternate.hooks && wipFiber.alternate.hooks[hookIndex];
+  var hook = {
+    state: oldHook ? oldHook.state : initial,
+    queue: []
+  };
+  //we haven’t run the action yet, We do it the next time we are rendering the component, we get all the actions from the old hook queue, and then apply them one by one to the new hook state, so when we return the state it’s updated.
+  var actions = oldHook ? oldHook.queue : [];
+  actions.forEach(function (action) {
+    hook.state = action(hook.state);
+  });
+  //   useState should also return a function to update the state, so we define a setState function that receives an action (for the Counter example this action is the function that increments the state by one).
+  // We push that action to a queue we added to the hook.
+  // And then we do something similar to what we did in the render function, set a new work in progress root as the next unit of work so the work loop can start a new render phase.
+  var setState = function setState(action) {
+    hook.queue.push(action);
+    wipRoot = {
+      dom: currentRoot.dom,
+      props: currentRoot.props,
+      alternate: currentRoot
+    };
+    nextUnitOfWork = wipRoot; //Esto hace que se ejecute un nuevo render
+    deletions = [];
+  };
+  wipFiber.hooks.push(hook);
+  hookIndex++;
+  return [hook.state, setState];
+}
+function updateHostComponent(fiber) {
+  if (!fiber.dom) {
+    fiber.dom = createDom(fiber);
+  }
+  reconcileChildren(fiber, fiber.props.children);
+}
+function reconcileChildren(wipFiber, elements) {
+  var index = 0;
+  var prevSibling = null;
+  var oldFiber = wipFiber.alternate && wipFiber.alternate.child;
+  //Recorre desde el Root hacia los children
+  //Cuando se acaban los children, busca nodos hermanos
+  // Cuando se acaban los hermanos busca hermanos de su parent 
+  // Y si se acaban busca hermanos de su abuelo y asi hasta volver al root.
+
+  while (index < elements.length || oldFiber != null) {
+    var element = elements[index];
+    var newFiber = null;
+    //deletions = []
+    var sameType = oldFiber && element && element.type == oldFiber.type;
+
+    // TODO compare oldFiber to element
+    /*     We iterate at the same time over the children of the old fiber (wipFiber.alternate) and the array of elements we want to reconcile.
+    If we ignore all the boilerplate needed to iterate over an array and a linked list at the same time, we are left with what matters most inside this while: oldFiber and element. The element is the thing we want to render to the DOM and the oldFiber is what we rendered the last time.
+    We need to compare them to see if there’s any change we need to apply to the DOM.
+     */
+    // Here React also uses keys, that makes a better reconciliation. For example, it detects when children change places in the element array.
+    if (sameType) {
+      // TODO update the node
+      //When the old fiber and the element have the same type, we create a new fiber keeping the DOM node from the old fiber and the props from the element.
+      // We also add a new property to the fiber: the effectTag. We’ll use this property later, during the commit phase.
+      newFiber = {
+        type: oldFiber.type,
+        props: element.props,
+        dom: oldFiber.dom,
+        parent: wipFiber,
+        alternate: oldFiber,
+        effectTag: "UPDATE"
+      };
+    }
+    if (element && !sameType) {
+      // TODO add this node
+      // Then for the case where the element needs a new DOM node we tag the new fiber with the PLACEMENT effect tag.
+      newFiber = {
+        type: element.type,
+        props: element.props,
+        dom: null,
+        parent: wipFiber,
+        alternate: null,
+        effectTag: "PLACEMENT"
+      };
+    }
+    if (oldFiber && !sameType) {
+      // TODO delete the oldFiber's node
+      //And for the case where we need to delete the node, we don’t have a new fiber so we add the effect tag to the old fiber.
+      // But when we commit the fiber tree to the DOM we do it from the work in progress root, which doesn’t have the old fibers.
+      oldFiber.effectTag = "DELETION";
+      deletions.push(oldFiber);
+    }
+    //And we add it to the fiber tree setting it either as a child or as a sibling, depending on whether it’s the first child or not.
+    if (oldFiber) {
+      oldFiber = oldFiber.sibling;
+    }
+    if (index === 0) {
+      wipFiber.child = newFiber;
+    } else if (element) {
+      prevSibling.sibling = newFiber;
+    }
+    // porque es una double linked list!
+    prevSibling = newFiber;
+    index++;
+  }
+}
 export var Dune = {
   createElement: createElement,
   render: render,
