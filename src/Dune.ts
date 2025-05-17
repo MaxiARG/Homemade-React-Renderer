@@ -37,6 +37,7 @@ function createTextElement(text: string): Element {
 }
 
 let nextUnitOfWork = null
+let wipRoot = null
 
 function workLoop(deadline) {
   let shouldYield = false
@@ -48,7 +49,10 @@ function workLoop(deadline) {
   }
   requestIdleCallback(workLoop)
 }
-
+//Sali del Root y regrese. Significa que ya recorri todos los nodos.
+ if (!nextUnitOfWork && wipRoot) {
+    commitRoot()
+  }
 requestIdleCallback(workLoop)
 
 function performUnitOfWork(fiber) {
@@ -124,13 +128,30 @@ function createDom(fiber) {
   return dom
 }
 
+function commitWork(fiber) {
+  if (!fiber) {
+    return
+  }
+  const domParent = fiber.parent.dom
+  domParent.appendChild(fiber.dom)
+  // recorrido recursivo por el fiber tree
+  commitWork(fiber.child)
+  commitWork(fiber.sibling)
+}
+
+function commitRoot () {
+  commitWork(wipRoot.child)
+  wipRoot = null
+}
+
 export function render(element: Element, container: HTMLElement): void {
-nextUnitOfWork = {
+wipRoot = {
     dom: container,
     props: {
       children: [element],
     },
   }
+    nextUnitOfWork = wipRoot
 }
 
 export const Dune = {

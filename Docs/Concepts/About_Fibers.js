@@ -82,3 +82,9 @@ const fiber = {
 //And if the fiber doesn’t have a child nor a sibling we go to the “uncle”: the sibling of the parent. Like a and h2 fibers from the example.
 
 // Also, if the parent doesn’t have a sibling, we keep going up through the parents until we find one with a sibling or until we reach the root. If we have reached the root, it means we have finished performing all the work for this render.
+
+//Step VI: Reconciliation
+// So far we only added stuff to the DOM, but what about updating or deleting nodes?
+
+// That’s what we are going to do now, we need to compare the elements we receive on the render function to the last fiber tree we committed to the DOM.
+//https://pomb.us/build-your-own-react/
