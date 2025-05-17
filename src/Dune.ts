@@ -19,7 +19,7 @@ export function createElement(
     type,
     props: {
       ...props,
-      children: children.map((child) =>
+      children: children.map((child) =>// es un objeto o es un texto.
         typeof child === 'object' ? child : createTextElement(child)
       ),
     },
@@ -31,9 +31,28 @@ function createTextElement(text: string): Element {
     type: 'TEXT_ELEMENT',
     props: {
       nodeValue: text,
-      children: [],
+      children: [], // elementos de texto no tienen children.
     },
   };
+}
+
+let nextUnitOfWork = null
+
+function workLoop(deadline) {
+  let shouldYield = false
+  while (nextUnitOfWork && !shouldYield) {
+    nextUnitOfWork = performUnitOfWork(
+      nextUnitOfWork
+    )
+    shouldYield = deadline.timeRemaining() < 1
+  }
+  requestIdleCallback(workLoop)
+}
+
+requestIdleCallback(workLoop)
+
+function performUnitOfWork(nextUnitOfWork) {
+  // TODO
 }
 
 export function render(element: Element, container: HTMLElement): void {

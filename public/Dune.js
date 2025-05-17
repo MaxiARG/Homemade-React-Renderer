@@ -12,7 +12,10 @@ export function createElement(type, props) {
     type: type,
     props: _objectSpread(_objectSpread({}, props), {}, {
       children: children.map(function (child) {
-        return _typeof(child) === 'object' ? child : createTextElement(child);
+        return (
+          // es un objeto o es un texto.
+          _typeof(child) === 'object' ? child : createTextElement(child)
+        );
       })
     })
   };
@@ -22,9 +25,22 @@ function createTextElement(text) {
     type: 'TEXT_ELEMENT',
     props: {
       nodeValue: text,
-      children: []
+      children: [] // elementos de texto no tienen children.
     }
   };
+}
+var nextUnitOfWork = null;
+function workLoop(deadline) {
+  var shouldYield = false;
+  while (nextUnitOfWork && !shouldYield) {
+    nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
+    shouldYield = deadline.timeRemaining() < 1;
+  }
+  requestIdleCallback(workLoop);
+}
+requestIdleCallback(workLoop);
+function performUnitOfWork(nextUnitOfWork) {
+  // TODO
 }
 export function render(element, container) {
   var _element$props$childr;
