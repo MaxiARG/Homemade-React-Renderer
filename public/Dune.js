@@ -12,14 +12,14 @@ export function createElement(type, props) {
     type: type,
     props: _objectSpread(_objectSpread({}, props), {}, {
       children: children.map(function (child) {
-        return _typeof(child) === "object" ? child : createTextElement(child);
+        return _typeof(child) === 'object' ? child : createTextElement(child);
       })
     })
   };
 }
 function createTextElement(text) {
   return {
-    type: "TEXT_ELEMENT",
+    type: 'TEXT_ELEMENT',
     props: {
       nodeValue: text,
       children: []
@@ -28,9 +28,15 @@ function createTextElement(text) {
 }
 export function render(element, container) {
   var _element$props$childr;
-  var dom = element.type === "TEXT_ELEMENT" ? document.createTextNode(element.props.nodeValue) : document.createElement(element.type);
+  if (typeof element.type === 'function') {
+    var component = element.type;
+    var child = component(element.props);
+    render(child, container);
+    return;
+  }
+  var dom = element.type === 'TEXT_ELEMENT' ? document.createTextNode(element.props.nodeValue) : document.createElement(element.type);
   var isProperty = function isProperty(key) {
-    return key !== "children";
+    return key !== 'children';
   };
   Object.keys(element.props).filter(isProperty).forEach(function (name) {
     dom[name] = element.props[name];
@@ -44,3 +50,4 @@ export var Dune = {
   createElement: createElement,
   render: render
 };
+window.Dune = Dune; // o como lo hayas llamado

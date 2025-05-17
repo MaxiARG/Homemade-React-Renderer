@@ -2,10 +2,12 @@
   "name": "homemadereact",
   "version": "1.0.0",
   "main": "dist/index.js",
-"scripts": {
-  "build": "babel src --out-dir public --extensions \".js,.jsx,.ts,.tsx\"",
-  "start": "npm run build && npx serve public"
-},
+  "scripts": {
+    "build": "babel src --out-dir public --extensions \".js,.jsx,.ts,.tsx\"",
+    "start": "npm run build && npx serve public",
+    "format": "prettier --write ."
+  },
+  "prettier": "prettier-config-standard",
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -15,6 +17,8 @@
     "@babel/core": "^7.27.1",
     "@babel/preset-env": "^7.27.2",
     "@babel/preset-react": "^7.27.1",
-    "@babel/preset-typescript": "^7.27.1"
+    "@babel/preset-typescript": "^7.27.1",
+    "prettier": "^3.5.3",
+    "prettier-config-standard": "^7.0.0"
   }
 }
