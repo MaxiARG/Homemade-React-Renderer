@@ -1,4 +1,4 @@
-import { Dune } from './index.js';
+import { Dune } from './Dune.js';
 var crearRoot = function crearRoot() {
   return Dune.createElement("div", {
     style: "background: salmon"

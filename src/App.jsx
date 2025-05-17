@@ -1,4 +1,4 @@
-import {Dune} from './index.js'
+import {Dune} from './Dune.js'
 
 const crearRoot = () => {
   return(
