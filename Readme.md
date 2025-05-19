@@ -1,47 +1,89 @@
-# This project is a study of how React works internally.
+# React Engine Study
 
-The project integrates side toolings just like React does:
+> This project is a study of how **React works internally**, inspired by its architecture and execution model.
 
-1- Babel: used for converting React style tags to HTML
-2- Typescript
+---
 
-It showcases the main parts of the React engine:
+## 📦 Tooling Integrated
 
-a- Transpiling JSX/TSX to Javascript, which in turns makes it posible to write React tags and insert them in the DOM
+Just like React, this project integrates supporting tools:
 
-b- React renderer, which allows to create a complex tree like data structure of React nodes
+1. **Babel** — Transpiles JSX/TSX to JavaScript, allowing you to write HTML-like tags.
+2. **TypeScript** — Provides type safety and better development experience.
 
-b- Scheduler, to allow the code to execute different task while the navigator is idle.
+---
 
-c- Fibers data structure, which allows to represent nodes, parents, children, siblings, current state and previous states. It also allows the reconciliation process when state changes.
+## ⚙️ Core Concepts Demonstrated
 
-d- Hooks implemented: useState, useEffect... more to come..
+### 1. Transpilation
+- **JSX/TSX to JavaScript**: Enables writing React tags and inserting them into the DOM.
 
-e- Style object as a prop
+### 2. Renderer
+- **React-like Renderer**: Builds a tree-like data structure representing React nodes.
 
-f- Children flattening: allows to use {myListOfUsers.map(elem => <div>elem.name</div>)}
+### 3. Scheduler
+- **Idle Time Execution**: Runs tasks while the browser is idle to prevent blocking the UI.
 
-If you add a breakpoint in one of your function components in a real React app, the call stack should show you:
+### 4. Fiber Data Structure
+- Models:
+  - **Nodes**, **parents**, **children**, **siblings**
+  - **Current** and **previous** states
+- Powers:
+  - **Reconciliation** when state changes
 
-workLoop
-performUnitOfWork
-updateFunctionComponent
+### 5. Hooks (Implemented)
+- `useState`
+- `useEffect`
+- _More coming soon..._
 
-these are a few things that React does differently:
+### 6. Inline Style Support
+- Supports passing style objects as props.
 
-Here, we are walking the whole tree during the render phase. React instead follows some hints and heuristics to skip entire sub-trees where nothing changed.
+### 7. Children Flattening
+- Example:
+  ```jsx
+  {myListOfUsers.map(user => <div>{user.name}</div>)}
+  ```
 
+---
 
-We are also walking the whole tree in the commit phase. React keeps a linked list with just the fibers that have effects and only visit those fibers.
+## 🛠️ Debugging React-like Execution
 
+When debugging a real React app, you'll encounter the following **call stack**:
 
-Every time we build a new work in progress tree, we create new objects for each fiber. React recycles the fibers from the previous trees.
+- `workLoop`
+- `performUnitOfWork`
+- `updateFunctionComponent`
 
+---
 
-When React receives a new update during the render phase, it throws away the work in progress tree and starts again from the root. React tags each update with an expiration timestamp 
-and uses it to decide which update has a higher priority.
+## ⚠️ Differences from Real React
 
+- **Render Phase**:  
+  - _This project walks the whole tree._  
+    React uses heuristics to skip subtrees where nothing changed.
 
-There are also a few features that you can add easily:
+- **Commit Phase**:  
+  - _This project walks the whole tree._  
+    React keeps a linked list of fibers with effects and visits only those.
 
-reconciliation by key
+- **Fiber Reuse**:  
+  - _This project recreates fibers every time._  
+    React recycles fibers from previous trees.
+
+- **Update Handling**:  
+  - _This project restarts from scratch when an update comes in._  
+    React uses expiration timestamps to prioritize updates.
+
+---
+
+## 🚧 Roadmap / TODO
+
+- **Reconciliation by Key**
+  - Build a map of old fibers by key.
+  - Reconcile using keys first.
+  - Fallback to type and position matching if no key is present.
+
+---
+
+> _Inspired by how React prioritizes performance and user experience through its internal mechanisms._

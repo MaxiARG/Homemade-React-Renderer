@@ -26,6 +26,7 @@ const crearRoot = () => {
       {
         [1,2,3].map((elem)=>(<div>{elem}</div>))
       }
+      
     </div>
   );
 };
