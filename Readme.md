@@ -41,5 +41,4 @@ There are also a few features that you can add easily:
 
 use an object for the style prop
 flatten children arrays
-useEffect hook
 reconciliation by key

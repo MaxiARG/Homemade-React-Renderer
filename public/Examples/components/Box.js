@@ -1,5 +1,8 @@
 var Box = function Box() {
   console.log('Box Render started ejecutado exitosamente');
+  var thisIsMyFunction = function thisIsMyFunction() {
+    console.log('thisIsMyFunction thisIsMyFunction thisIsMyFunction thisIsMyFunction thisIsMyFunction');
+  };
   window.React.useEffect(function () {
     console.log('Box useEffect ejecutado exitosamente');
   }, []);

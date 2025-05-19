@@ -3,6 +3,7 @@ import Box from './Examples/components/Box.js';
 import Counter from './Examples/components/Counter.js';
 import Label from './Examples/components/Label.js';
 import YetAnotherBox from './Examples/components/YetAnotherBox.js';
+import StyledComponent from './Examples/StyledComponent.js';
 
 const crearRoot = () => {
   return (
@@ -20,6 +21,7 @@ const crearRoot = () => {
       <Box />
       <YetAnotherBox/>
       <Counter />
+      <StyledComponent />
     </div>
   );
 };

@@ -1,4 +1,5 @@
-import { Element, Props } from "./types"
+import { Element, Props } from "./types/index"
+
 let wipFiber = null
 let hookIndex = null
 let nextUnitOfWork = null
@@ -78,16 +79,26 @@ function updateDom(dom, prevProps, nextProps) {
     .filter(isProperty)
     .filter(isGone(prevProps, nextProps))
     .forEach(name => {
-      dom[name] = ""
-    })
+      if (name === "style") {
+        Object.keys(prevProps.style || {}).forEach(styleName => {
+          dom.style[styleName] = "";
+        });
+      } else {
+        dom[name] = "";
+      }
+    });
 
   // Set new or changed properties
   Object.keys(nextProps)
     .filter(isProperty)
     .filter(isNew(prevProps, nextProps))
     .forEach(name => {
-      dom[name] = nextProps[name]
-    })
+      if (name === "style" && typeof nextProps.style === "object") {
+        Object.assign(dom.style, nextProps.style);
+      } else {
+        dom[name] = nextProps[name];
+      }
+    });
 
   //And then we add the new handler.
   // Add event listeners
@@ -409,16 +420,6 @@ function reconcileChildren(wipFiber, elements) {
   }
 
 }
-// Replace by Object.is
-function isEqual(a, b) {
-  if (a === b) {
-    // +0 !== -0
-    return a !== 0 || 1 / a === 1 / b;
-  }
-  // NaN === NaN
-  return a !== a && b !== b;
-}
-
 //Ejecución después del renderizado:
 // Al igual que en React, tu implementación ejecuta los efectos después de que el componente ha sido renderizado y el DOM actualizado. Esto asegura que los efectos no bloqueen la actualización de la interfaz de usuario.
 // Dependencias para controlar la ejecución:
@@ -436,7 +437,7 @@ export function useEffect(effect, deps) {
     wipFiber.alternate.hooks[hookIndex];
 
   const hasChanged = oldHook
-    ? !deps || deps.some((dep, i) => !isEqual(dep, oldHook.deps[i]))
+    ? !deps || deps.some((dep, i) => !Object.is(dep, oldHook.deps[i]))
     : true;
 
   const hook = {

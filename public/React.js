@@ -74,12 +74,22 @@ function updateDom(dom, prevProps, nextProps) {
 
   // Remove old properties
   Object.keys(prevProps).filter(isProperty).filter(isGone(prevProps, nextProps)).forEach(function (name) {
-    dom[name] = "";
+    if (name === "style") {
+      Object.keys(prevProps.style || {}).forEach(function (styleName) {
+        dom.style[styleName] = "";
+      });
+    } else {
+      dom[name] = "";
+    }
   });
 
   // Set new or changed properties
   Object.keys(nextProps).filter(isProperty).filter(isNew(prevProps, nextProps)).forEach(function (name) {
-    dom[name] = nextProps[name];
+    if (name === "style" && _typeof(nextProps.style) === "object") {
+      Object.assign(dom.style, nextProps.style);
+    } else {
+      dom[name] = nextProps[name];
+    }
   });
 
   //And then we add the new handler.
@@ -132,6 +142,7 @@ function commitWork(fiber) {
 // recorrer y limpiar los hooks del Fiber cuando un componente se elimina.
 // Si el Fiber que se está eliminando tiene hooks, ejecuta los cleanups registrados en ellos antes de eliminarlo del DOM.
 // De esta forma, incluso si el componente nunca vuelve a renderizar, sus efectos se limpian correctamente cuando es desmontado.
+// Quote : React will call your cleanup function each time before the Effect runs again, and one final time when the component unmounts (gets removed)
 function commitDeletion(fiber, domParent) {
   // Ejecutar cleanups de hooks antes de eliminar el nodo
   if (fiber.hooks) {
@@ -354,16 +365,6 @@ function reconcileChildren(wipFiber, elements) {
     index++;
   }
 }
-// Replace by Object.is
-function isEqual(a, b) {
-  if (a === b) {
-    // +0 !== -0
-    return a !== 0 || 1 / a === 1 / b;
-  }
-  // NaN === NaN
-  return a !== a && b !== b;
-}
-
 //Ejecución después del renderizado:
 // Al igual que en React, tu implementación ejecuta los efectos después de que el componente ha sido renderizado y el DOM actualizado. Esto asegura que los efectos no bloqueen la actualización de la interfaz de usuario.
 // Dependencias para controlar la ejecución:
@@ -377,7 +378,7 @@ function isEqual(a, b) {
 export function useEffect(effect, deps) {
   var oldHook = wipFiber.alternate && wipFiber.alternate.hooks && wipFiber.alternate.hooks[hookIndex];
   var hasChanged = oldHook ? !deps || deps.some(function (dep, i) {
-    return !isEqual(dep, oldHook.deps[i]);
+    return !Object.is(dep, oldHook.deps[i]);
   }) : true;
   var hook = {
     effect: effect,
