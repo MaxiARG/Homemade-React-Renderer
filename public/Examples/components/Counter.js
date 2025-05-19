@@ -7,20 +7,20 @@ function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
 var Counter = function Counter() {
   var _window$React$useStat = window.React.useState(2),
     _window$React$useStat2 = _slicedToArray(_window$React$useStat, 2),
-    state = _window$React$useStat2[0],
-    setState = _window$React$useStat2[1];
+    counter = _window$React$useStat2[0],
+    setCounter = _window$React$useStat2[1];
   console.log('Counter Render started ejecutado exitosamente');
   window.React.useEffect(function () {
     console.log('Counter useEffect ejecutado exitosamente');
-  }, []);
+  }, [counter]);
   console.log('Counter Render finished ejecutado exitosamente');
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("button", {
     onClick: function onClick() {
       console.log('onClick');
-      setState(function (c) {
+      setCounter(function (c) {
         return c + 1;
       });
     }
-  }, "Click me"), "Counter: ", state);
+  }, "Click me"), "Counter: ", counter);
 };
 export default Counter;
