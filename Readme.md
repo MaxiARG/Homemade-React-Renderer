@@ -1,6 +1,6 @@
-# This project is study of how React works internally.
+# This project is a study of how React works internally.
 
-The project integrates side tooling just like React does:
+The project integrates side toolings just like React does:
 
 1- Babel: used for converting React style tags to HTML
 2- Typescript

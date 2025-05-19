@@ -34,7 +34,7 @@ function createTextElement(text) {
     type: 'TEXT_ELEMENT',
     props: {
       nodeValue: text,
-      children: [] // elementos de texto no tienen children.
+      children: [] // Text elements don't have children
     }
   };
 }
@@ -46,7 +46,7 @@ function createDom(fiber) {
 var isEvent = function isEvent(key) {
   return key.startsWith("on");
 };
-//One special kind of prop that we need to update are event listeners, so if the prop name starts with the “on” prefix we’ll handle them differently.
+//if the prop name starts with the “on” prefix we’ll handle them differently.
 var isProperty = function isProperty(key) {
   return key !== "children" && !isEvent(key);
 };
@@ -107,7 +107,6 @@ function commitWork(fiber) {
     return;
   }
   var domParentFiber = fiber.parent;
-  //Now that we have fibers without DOM nodes we need to change two things.
   //to find the parent of a DOM node we’ll need to go up the fiber tree until we find a fiber with a DOM node.
   while (!domParentFiber.dom) {
     domParentFiber = domParentFiber.parent;
@@ -138,7 +137,8 @@ function commitDeletion(fiber, domParent) {
 }
 
 //We have another problem here.
-// We are adding a new node to the DOM each time we work on an element. And, remember, the browser could interrupt our work before we finish rendering the whole tree. In that case, the user will see an incomplete UI. And we don’t want that.
+// We are adding a new node to the DOM each time we work on an element. But the browser could interrupt our work before 
+// we finish rendering the whole tree. In that case, the user will see an incomplete UI. And we don’t want that.
 // So we need to remove the part that mutates the DOM from here.
 // Instead, we’ll keep track of the root of the fiber tree. We call it the work in progress root or wipRoot.
 export function render(element, container) {
@@ -154,8 +154,7 @@ export function render(element, container) {
   nextUnitOfWork = wipRoot; // ejecuta nuevo render
 }
 // Step VI: Reconciliation
-// So far we only added stuff to the DOM, but what about updating or deleting nodes?
-// That’s what we are going to do now, we need to compare the elements we receive on the render function to the last fiber tree we committed to the DOM.
+// We need to compare the elements we receive on the render function to the last fiber tree we committed to the DOM.
 // So we need to save a reference to that “last fiber tree we committed to the DOM” after we finish the commit. We call it currentRoot.
 // We also add the alternate property to every fiber. This property is a link to the old fiber, the fiber that we committed to the DOM in the previous commit phase.
 
@@ -172,21 +171,20 @@ function workLoop(deadline) {
 }
 
 //aca es donde se ejecuta el workloop cuando el navegador esta idle
+// this function is one with the lowest priority to execute.
 requestIdleCallback(workLoop);
 
 //Function components are differents in two ways:
 // the fiber from a function component doesn’t have a DOM node
 // and the children come from running the function instead of getting them directly from the props
-
 function performUnitOfWork(fiber) {
-  // TODO: agregar el dom node
   var isFunctionComponent = fiber.type instanceof Function;
   if (isFunctionComponent) {
     updateFunctionComponent(fiber);
   } else {
     updateHostComponent(fiber);
   }
-  // TODO: return  next unit of work
+  // Return  next unit of work
   //Finally we search for the next unit of work. We first try with the child, then with the sibling, then with the uncle, and so on.
   if (fiber.child) {
     return fiber.child;
@@ -200,8 +198,8 @@ function performUnitOfWork(fiber) {
   }
 }
 
-//And in updateFunctionComponent we run the function to get the children.
-// For our example, here the fiber.type is the App function and when we run it, it returns the h1 element.
+// in updateFunctionComponent we run the function to get the children.
+// here the fiber.type is the App function and when we run it, it returns the h1 element.
 // Then, once we have the children, the reconciliation works in the same way, we don’t need to change anything there.
 function updateFunctionComponent(fiber) {
   //We need to initialize some global variables before calling the function component so we can use them inside of the useState function.
@@ -230,14 +228,18 @@ function useState(initial) {
     state: oldHook ? oldHook.state : initial,
     queue: []
   };
-  //we haven’t run the action yet, We do it the next time we are rendering the component, we get all the actions from the old hook queue, and then apply them one by one to the new hook state, so when we return the state it’s updated.
+  //we haven’t run the action yet, We do it the next time we are rendering the component, 
+  // we get all the actions from the old hook queue, and then apply them one by one to the 
+  // new hook state, so when we return the state it’s updated.
   var actions = oldHook ? oldHook.queue : [];
   actions.forEach(function (action) {
     hook.state = action(hook.state);
   });
-  //   useState should also return a function to update the state, so we define a setState function that receives an action (for the Counter example this action is the function that increments the state by one).
+  //   useState should also return a function to update the state, so we define a setState function that 
+  // receives an action (for the Counter example this action is the function that increments the state by one).
   // We push that action to a queue we added to the hook.
-  // And then we do something similar to what we did in the render function, set a new work in progress root as the next unit of work so the work loop can start a new render phase.
+  // And then we do something similar to what we did in the render function, set a new work in progress root
+  //  as the next unit of work so the work loop can start a new render phase.
   var setState = function setState(action) {
     hook.queue.push(action);
     wipRoot = {
@@ -270,18 +272,20 @@ function reconcileChildren(wipFiber, elements) {
   while (index < elements.length || oldFiber != null) {
     var element = elements[index];
     var newFiber = null;
-    //deletions = []
     var sameType = oldFiber && element && element.type == oldFiber.type;
 
     // TODO compare oldFiber to element
     /*     We iterate at the same time over the children of the old fiber (wipFiber.alternate) and the array of elements we want to reconcile.
-    If we ignore all the boilerplate needed to iterate over an array and a linked list at the same time, we are left with what matters most inside this while: oldFiber and element. The element is the thing we want to render to the DOM and the oldFiber is what we rendered the last time.
+    If we ignore all the boilerplate needed to iterate over an array and a linked list at the same time, we are left with what matters
+     most inside this while: oldFiber and element. The element is the thing we want to render to the DOM and the oldFiber is what we 
+     rendered the last time.
     We need to compare them to see if there’s any change we need to apply to the DOM.
      */
     // Here React also uses keys, that makes a better reconciliation. For example, it detects when children change places in the element array.
     if (sameType) {
       // TODO update the node
-      //When the old fiber and the element have the same type, we create a new fiber keeping the DOM node from the old fiber and the props from the element.
+      //When the old fiber and the element have the same type, we create a new fiber keeping the DOM node from the old fiber 
+      // and the props from the element.
       // We also add a new property to the fiber: the effectTag. We’ll use this property later, during the commit phase.
       newFiber = {
         type: oldFiber.type,
@@ -293,7 +297,6 @@ function reconcileChildren(wipFiber, elements) {
       };
     }
     if (element && !sameType) {
-      // TODO add this node
       // Then for the case where the element needs a new DOM node we tag the new fiber with the PLACEMENT effect tag.
       newFiber = {
         type: element.type,
@@ -305,7 +308,6 @@ function reconcileChildren(wipFiber, elements) {
       };
     }
     if (oldFiber && !sameType) {
-      // TODO delete the oldFiber's node
       //And for the case where we need to delete the node, we don’t have a new fiber so we add the effect tag to the old fiber.
       // But when we commit the fiber tree to the DOM we do it from the work in progress root, which doesn’t have the old fibers.
       oldFiber.effectTag = "DELETION";
@@ -362,4 +364,5 @@ export var React = {
   useState: useState,
   useEffect: useEffect
 };
+// TODO: remove this, and remove the declare global in favor of just using the  export const React.
 window.React = React;

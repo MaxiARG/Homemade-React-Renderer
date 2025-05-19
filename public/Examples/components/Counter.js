@@ -9,6 +9,11 @@ var Counter = function Counter() {
     _window$React$useStat2 = _slicedToArray(_window$React$useStat, 2),
     state = _window$React$useStat2[0],
     setState = _window$React$useStat2[1];
+  console.log('Counter Render started ejecutado exitosamente');
+  window.React.useEffect(function () {
+    console.log('Counter useEffect ejecutado exitosamente');
+  }, []);
+  console.log('Counter Render finished ejecutado exitosamente');
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("button", {
     onClick: function onClick() {
       console.log('onClick');

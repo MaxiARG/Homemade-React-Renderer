@@ -1,4 +1,9 @@
 var Box = function Box() {
+  console.log('Box Render started ejecutado exitosamente');
+  window.React.useEffect(function () {
+    console.log('Box useEffect ejecutado exitosamente');
+  }, []);
+  console.log('Box Render finished ejecutado exitosamente');
   return /*#__PURE__*/React.createElement("div", {
     style: "background-color: green"
   }, "Just a big green box");
