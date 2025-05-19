@@ -1,5 +1,5 @@
 var YetAnotherBox = function YetAnotherBox() {
-  return Dune.createElement("div", {
+  return /*#__PURE__*/React.createElement("div", {
     style: "align-items:center; text-align: center;"
   }, "Another Box");
 };

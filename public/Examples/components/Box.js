@@ -1,5 +1,5 @@
 var Box = function Box() {
-  return Dune.createElement("div", {
+  return /*#__PURE__*/React.createElement("div", {
     style: "background-color: green"
   }, "Just a big green box");
 };

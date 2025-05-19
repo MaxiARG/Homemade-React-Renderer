@@ -5,13 +5,13 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
 function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (null != t) { var e, n, i, u, a = [], f = !0, o = !1; try { if (i = (t = t.call(r)).next, 0 === l) { if (Object(t) !== t) return; f = !1; } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0); } catch (r) { o = !0, n = r; } finally { try { if (!f && null != t["return"] && (u = t["return"](), Object(u) !== u)) return; } finally { if (o) throw n; } } return a; } }
 function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
 var Counter = function Counter() {
-  var _Dune$useState = Dune.useState(2),
-    _Dune$useState2 = _slicedToArray(_Dune$useState, 2),
-    state = _Dune$useState2[0],
-    setState = _Dune$useState2[1];
-  return Dune.createElement("div", null, Dune.createElement("button", {
+  var _window$React$useStat = window.React.useState(2),
+    _window$React$useStat2 = _slicedToArray(_window$React$useStat, 2),
+    state = _window$React$useStat2[0],
+    setState = _window$React$useStat2[1];
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("button", {
     onClick: function onClick() {
-      console.log('asdasdasd');
+      console.log('onClick');
       setState(function (c) {
         return c + 1;
       });

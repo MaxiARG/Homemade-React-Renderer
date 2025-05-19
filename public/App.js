@@ -1,24 +1,24 @@
-import { Dune } from './Dune.js';
+import { React } from './React.js';
 import Box from './Examples/components/Box.js';
 import Counter from './Examples/components/Counter.js';
 import Label from './Examples/components/Label.js';
 import YetAnotherBox from './Examples/components/YetAnotherBox.js';
 var crearRoot = function crearRoot() {
-  return Dune.createElement("div", {
+  return /*#__PURE__*/React.createElement("div", {
     style: "background: salmon"
-  }, Dune.createElement("h1", null, "Construyendo React de manera casera"), Dune.createElement("h2", {
+  }, /*#__PURE__*/React.createElement("h1", null, "Construyendo React de manera casera"), /*#__PURE__*/React.createElement("h2", {
     style: "text-align:right"
-  }, "Caso de estudio"), Dune.createElement("h2", {
+  }, "Caso de estudio"), /*#__PURE__*/React.createElement("h2", {
     style: "text-align:right"
-  }, "Caso de estudio"), Dune.createElement("h1", null, "Construyendo React de manera casera"), Dune.createElement("h2", {
+  }, "Caso de estudio"), /*#__PURE__*/React.createElement("h1", null, "Construyendo React de manera casera"), /*#__PURE__*/React.createElement("h2", {
     style: "text-align:right"
-  }, "Caso de estudio"), Dune.createElement("h2", {
+  }, "Caso de estudio"), /*#__PURE__*/React.createElement("h2", {
     style: "text-align:right"
-  }, "Caso de estudio"), Dune.createElement("h1", null, "Construyendo React de manera casera"), Dune.createElement("h2", {
+  }, "Caso de estudio"), /*#__PURE__*/React.createElement("h1", null, "Construyendo React de manera casera"), /*#__PURE__*/React.createElement("h2", {
     style: "text-align:right"
-  }, "Caso de estudio"), Dune.createElement("h2", {
+  }, "Caso de estudio"), /*#__PURE__*/React.createElement("h2", {
     style: "text-align:right"
-  }, "Caso de estudio"), Dune.createElement(Label, null), Dune.createElement(Box, null), Dune.createElement(YetAnotherBox, null), Dune.createElement(Counter, null));
+  }, "Caso de estudio"), /*#__PURE__*/React.createElement(Label, null), /*#__PURE__*/React.createElement(Box, null), /*#__PURE__*/React.createElement(YetAnotherBox, null), /*#__PURE__*/React.createElement(Counter, null));
 };
 var container = document.getElementById('root');
-Dune.render(crearRoot(), container);
+React.render(crearRoot(), container);

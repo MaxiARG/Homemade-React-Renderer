@@ -1,10 +1,10 @@
 const Counter = () => {
-  const [state, setState] = Dune.useState(2);
+  const [state, setState] = window.React.useState(2)
 
   return (
     <div>
       <button onClick={() => {
-        console.log('asdasdasd');
+        console.log('onClick');
         setState(c => c + 1);
       }}>
         Click me

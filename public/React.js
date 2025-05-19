@@ -10,6 +10,8 @@ var nextUnitOfWork = null;
 var wipRoot = null;
 var currentRoot = null;
 var deletions = null; //So we need an array to keep track of the nodes we want to remove.
+//for useEffect
+var wipEffects = []; // Global para recolectar efectos. Considerar llevar esto al Fiber
 
 export function createElement(type, props) {
   for (var _len = arguments.length, children = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
@@ -93,6 +95,12 @@ function commitRoot() {
   commitWork(wipRoot.child);
   currentRoot = wipRoot;
   wipRoot = null;
+
+  // Ejecutar todos los useEffect. Estos siempre se ejecutan luego de haber ejecutado todo lo demas.
+  wipEffects.forEach(function (e) {
+    return e();
+  });
+  wipEffects = [];
 }
 function commitWork(fiber) {
   if (!fiber) {
@@ -204,6 +212,13 @@ function updateFunctionComponent(fiber) {
   wipFiber.hooks = [];
   var children = [fiber.type(fiber.props)];
   reconcileChildren(fiber, children);
+
+  // Recolectar efectos después de reconciliar los children
+  wipFiber.hooks.forEach(function (hook) {
+    if (hook.effect && hook.hasChanged) {
+      wipEffects.push(hook.effect);
+    }
+  });
 }
 
 //When the function component calls useState, we check if we have an old hook. We check in the alternate of the fiber using the hook index.
@@ -305,14 +320,46 @@ function reconcileChildren(wipFiber, elements) {
     } else if (element) {
       prevSibling.sibling = newFiber;
     }
-    // porque es una double linked list!
+    // Think of this as a double linked list!
     prevSibling = newFiber;
     index++;
   }
 }
-export var Dune = {
+// Replace by Object.is
+function isEqual(a, b) {
+  if (a === b) {
+    // +0 !== -0
+    return a !== 0 || 1 / a === 1 / b;
+  }
+  // NaN === NaN
+  return a !== a && b !== b;
+}
+
+//Ejecución después del renderizado:
+// Al igual que en React, tu implementación ejecuta los efectos después de que el componente ha sido renderizado y el DOM actualizado. Esto asegura que los efectos no bloqueen la actualización de la interfaz de usuario.
+// Dependencias para controlar la ejecución:
+// Tu uso de un array de dependencias para determinar si un efecto debe ejecutarse nuevamente es coherente con la funcionalidad de React. Esto permite optimizar el rendimiento evitando ejecuciones innecesarias de efectos.
+//Persistencia de efectos entre renders:
+// Al almacenar los efectos en la propiedad hooks del fiber, se mantiene la información necesaria para comparar dependencias entre renders, similar a cómo React maneja internamente los hooks.
+//TODO: implementar cleanup cuando el useEffect retorna
+//TODO React mantiene una lista de efectos por componente, permitiendo una ejecución más controlada y eficiente. En esta implementación, los efectos se almacenan en una lista global (wipEffects), lo que podría llevar a efectos no deseados si múltiples componentes están montados simultáneamente.
+export function useEffect(effect, deps) {
+  var oldHook = wipFiber.alternate && wipFiber.alternate.hooks && wipFiber.alternate.hooks[hookIndex];
+  var hasChanged = oldHook ? !deps || deps.some(function (dep, i) {
+    return !isEqual(dep, oldHook.deps[i]);
+  }) : true;
+  var hook = {
+    effect: effect,
+    deps: deps,
+    hasChanged: hasChanged
+  };
+  wipFiber.hooks.push(hook);
+  hookIndex++;
+}
+export var React = {
   createElement: createElement,
   render: render,
-  useState: useState
+  useState: useState,
+  useEffect: useEffect
 };
-window.Dune = Dune;
+window.React = React;

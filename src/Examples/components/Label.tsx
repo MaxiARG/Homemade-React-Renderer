@@ -1,4 +1,4 @@
-// import * as Dune from './Dune';
+// import * as React from './React';
 // eliminar el globa.d.ts, pero hay que importar eso en todos los tsx que declare
 
 const Label = () => {

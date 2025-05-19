@@ -1,4 +1,4 @@
-import { Dune } from './Dune.js';
+import { React } from './React.js';
 import Box from './Examples/components/Box.js';
 import Counter from './Examples/components/Counter.js';
 import Label from './Examples/components/Label.js';
@@ -25,4 +25,4 @@ const crearRoot = () => {
 };
 
 const container = document.getElementById('root');
-Dune.render(crearRoot(), container);
+React.render(crearRoot(), container);
