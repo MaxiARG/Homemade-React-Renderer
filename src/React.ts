@@ -160,6 +160,7 @@ function commitWork(fiber) {
 // recorrer y limpiar los hooks del Fiber cuando un componente se elimina.
 // Si el Fiber que se está eliminando tiene hooks, ejecuta los cleanups registrados en ellos antes de eliminarlo del DOM.
 // De esta forma, incluso si el componente nunca vuelve a renderizar, sus efectos se limpian correctamente cuando es desmontado.
+// Quote : React will call your cleanup function each time before the Effect runs again, and one final time when the component unmounts (gets removed)
 function commitDeletion(fiber, domParent) {
   // Ejecutar cleanups de hooks antes de eliminar el nodo
   if (fiber.hooks) {

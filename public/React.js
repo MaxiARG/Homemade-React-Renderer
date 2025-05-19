@@ -128,10 +128,22 @@ function commitWork(fiber) {
   commitWork(fiber.child);
   commitWork(fiber.sibling);
 }
+
+// recorrer y limpiar los hooks del Fiber cuando un componente se elimina.
+// Si el Fiber que se está eliminando tiene hooks, ejecuta los cleanups registrados en ellos antes de eliminarlo del DOM.
+// De esta forma, incluso si el componente nunca vuelve a renderizar, sus efectos se limpian correctamente cuando es desmontado.
 function commitDeletion(fiber, domParent) {
+  // Ejecutar cleanups de hooks antes de eliminar el nodo
+  if (fiber.hooks) {
+    fiber.hooks.forEach(function (hook) {
+      if (typeof hook.cleanup === 'function') {
+        hook.cleanup();
+      }
+    });
+  }
   if (fiber.dom) {
     domParent.removeChild(fiber.dom);
-  } else {
+  } else if (fiber.child) {
     commitDeletion(fiber.child, domParent);
   }
 }
@@ -212,9 +224,24 @@ function updateFunctionComponent(fiber) {
   reconcileChildren(fiber, children);
 
   // Recolectar efectos después de reconciliar los children
+  // guardar y ejecutar la función de cleanup si el efecto devuelve una función.
+  //
   wipFiber.hooks.forEach(function (hook) {
     if (hook.effect && hook.hasChanged) {
-      wipEffects.push(hook.effect);
+      wipEffects.push(function () {
+        // Ejecutar cleanup anterior si existe
+        if (typeof hook.cleanup === 'function') {
+          hook.cleanup();
+        }
+
+        // Ejecutar el efecto y guardar el nuevo cleanup si devuelve uno
+        var cleanup = hook.effect();
+        if (typeof cleanup === 'function') {
+          hook.cleanup = cleanup;
+        } else {
+          hook.cleanup = undefined;
+        }
+      });
     }
   });
 }
@@ -345,6 +372,8 @@ function isEqual(a, b) {
 // Al almacenar los efectos en la propiedad hooks del fiber, se mantiene la información necesaria para comparar dependencias entre renders, similar a cómo React maneja internamente los hooks.
 //TODO: implementar cleanup cuando el useEffect retorna
 //TODO React mantiene una lista de efectos por componente, permitiendo una ejecución más controlada y eficiente. En esta implementación, los efectos se almacenan en una lista global (wipEffects), lo que podría llevar a efectos no deseados si múltiples componentes están montados simultáneamente.
+//Guardar el cleanup en el hook cuando el efecto se ejecuta.
+// Ejecutarlo antes de volver a ejecutar el efecto o cuando el componente se desmonta.
 export function useEffect(effect, deps) {
   var oldHook = wipFiber.alternate && wipFiber.alternate.hooks && wipFiber.alternate.hooks[hookIndex];
   var hasChanged = oldHook ? !deps || deps.some(function (dep, i) {
@@ -353,7 +382,8 @@ export function useEffect(effect, deps) {
   var hook = {
     effect: effect,
     deps: deps,
-    hasChanged: hasChanged
+    hasChanged: hasChanged,
+    cleanup: oldHook === null || oldHook === void 0 ? void 0 : oldHook.cleanup // Copia el cleanup anterior si existe
   };
   wipFiber.hooks.push(hook);
   hookIndex++;

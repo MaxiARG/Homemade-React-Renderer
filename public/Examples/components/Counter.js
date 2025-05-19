@@ -12,6 +12,9 @@ var Counter = function Counter() {
   console.log('Counter Render started ejecutado exitosamente');
   window.React.useEffect(function () {
     console.log('Counter useEffect ejecutado exitosamente');
+    return function () {
+      console.log('xx Counter useEffect cleanup ejecutado exitosamente xx');
+    };
   }, [counter]);
   console.log('Counter Render finished ejecutado exitosamente');
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("button", {

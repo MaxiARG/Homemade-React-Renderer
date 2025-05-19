@@ -4,6 +4,10 @@ const Counter = () => {
 
   window.React.useEffect(()=>{
     console.log('Counter useEffect ejecutado exitosamente')
+
+    return(()=>{
+       console.log('xx Counter useEffect cleanup ejecutado exitosamente xx')
+    })
   }, [counter])
 
   console.log('Counter Render finished ejecutado exitosamente')
