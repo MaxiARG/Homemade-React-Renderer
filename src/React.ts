@@ -1,5 +1,5 @@
 import { Element, Props } from "./types/index"
-
+//TODO: Move what needs to be moved to internal fiber
 let wipFiber = null
 let hookIndex = null
 let nextUnitOfWork = null
@@ -8,6 +8,12 @@ let currentRoot = null
 let deletions = null;//So we need an array to keep track of the nodes we want to remove.
 //for useEffect
 let wipEffects = []; // Global para recolectar efectos. Considerar llevar esto al Fiber
+
+function flatten(arr) {
+  return arr.reduce((flat, item) => {
+    return flat.concat(Array.isArray(item) ? flatten(item) : item);
+  }, []);
+}
 
 export function createElement(
   type: string,
@@ -18,7 +24,9 @@ export function createElement(
     type,
     props: {
       ...props,
-      children: children.map((child) =>// es un objeto o es un texto.
+      children: flatten(children).map((child) => // It does 2 things, decides if the element is of type object or text, and also flattens arrays.
+        // Flattening arrays is useful for doing stuff like {myListOfUsers.map(elem => <div>elem.name</div>)}
+        //2) We do the flattening before sending the nodes to the reconciler.
         typeof child === 'object' ? child : createTextElement(child)
       ),
     },

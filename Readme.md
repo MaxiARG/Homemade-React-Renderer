@@ -15,6 +15,11 @@ b- Scheduler, to allow the code to execute different task while the navigator is
 
 c- Fibers data structure, which allows to represent nodes, parents, children, siblings, current state and previous states. It also allows the reconciliation process when state changes.
 
+d- Hooks implemented: useState, useEffect... more to come..
+
+e- Style object as a prop
+
+f- Children flattening: allows to use {myListOfUsers.map(elem => <div>elem.name</div>)}
 
 If you add a breakpoint in one of your function components in a real React app, the call stack should show you:
 
@@ -39,6 +44,4 @@ and uses it to decide which update has a higher priority.
 
 There are also a few features that you can add easily:
 
-use an object for the style prop
-flatten children arrays
 reconciliation by key
