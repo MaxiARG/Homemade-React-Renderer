@@ -9,6 +9,8 @@ let deletions = null;//So we need an array to keep track of the nodes we want to
 //for useEffect
 let wipEffects = []; // Global para recolectar efectos. Considerar llevar esto al Fiber
 
+//Flattens any array of components so you can traverse it using the .map function
+// Remember .map returns an array []
 function flatten(arr) {
   return arr.reduce((flat, item) => {
     return flat.concat(Array.isArray(item) ? flatten(item) : item);
@@ -35,7 +37,7 @@ export function createElement(
 
 function createTextElement(text: string): Element {
   return {
-    type: 'TEXT_ELEMENT',
+    type: 'TEXT_ONLY',// Elements are of type Object or TEXT_ONLY
     props: {
       nodeValue: text,
       children: [], // Text elements don't have children
@@ -45,7 +47,7 @@ function createTextElement(text: string): Element {
 
 function createDom(fiber) {
   const dom =
-    fiber.type == "TEXT_ELEMENT"
+    fiber.type == "TEXT_ONLY"
       ? document.createTextNode("")
       : document.createElement(fiber.type)
 
@@ -76,7 +78,7 @@ function updateDom(dom, prevProps, nextProps) {
       const eventType = name
         .toLowerCase()
         .substring(2)
-      dom.removeEventListener(
+      dom.removeEventListener(//Remove event listeners before removing the node
         eventType,
         prevProps[name]
       )

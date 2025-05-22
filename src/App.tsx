@@ -4,6 +4,7 @@ import Counter from './Examples/components/Counter.js';
 import Label from './Examples/components/Label.js';
 import YetAnotherBox from './Examples/components/YetAnotherBox.js';
 import StyledComponent from './Examples/StyledComponent.js';
+import HolaMundo from './Examples/components/HolaMundo.js';
 
 const crearRoot = () => {
   return (
@@ -26,6 +27,7 @@ const crearRoot = () => {
       {
         [1,2,3].map((elem)=>(<div>{elem}</div>))
       }
+      <HolaMundo />
       
     </div>
   );

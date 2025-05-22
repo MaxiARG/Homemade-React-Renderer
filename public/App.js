@@ -4,6 +4,7 @@ import Counter from './Examples/components/Counter.js';
 import Label from './Examples/components/Label.js';
 import YetAnotherBox from './Examples/components/YetAnotherBox.js';
 import StyledComponent from './Examples/StyledComponent.js';
+import HolaMundo from './Examples/components/HolaMundo.js';
 var crearRoot = function crearRoot() {
   return /*#__PURE__*/React.createElement("div", {
     style: "background: salmon"
@@ -25,7 +26,7 @@ var crearRoot = function crearRoot() {
     theLabel: 'Array de elementos'
   }), [1, 2, 3].map(function (elem) {
     return /*#__PURE__*/React.createElement("div", null, elem);
-  }));
+  }), /*#__PURE__*/React.createElement(HolaMundo, null));
 };
 var container = document.getElementById('root');
 React.render(crearRoot(), container);
