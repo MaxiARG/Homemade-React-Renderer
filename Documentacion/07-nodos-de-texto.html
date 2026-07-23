@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nodos de texto (TEXT_ONLY) · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a class="active" href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Cuando un hijo es texto</p>
+      <h1>Nodos de texto (TEXT_ONLY)</h1>
+      <p class="lead">
+        No todo hijo es una etiqueta. Cuando un hijo es una cadena o un número, el motor
+        lo envuelve en un elemento sintético de tipo <code>TEXT_ONLY</code> para que el
+        árbol conserve una sola forma: todo es un <code>Element</code>.
+      </p>
+
+      <h2>El envoltorio: createTextElement</h2>
+      <p>
+        Recordemos el <code>.map</code> de <code>createElement</code> visto en el capítulo
+        <a href="06-createelement-y-flattening.html">anterior</a>: si un hijo no es un
+        objeto, se pasa por <code>createTextElement</code>. Esta es la función real:
+      </p>
+
+      <div class="filename">src/React.ts</div>
+      <pre><code>function createTextElement(text: string): Element {
+  return {
+    type: 'TEXT_ONLY',// Elements are of type Object or TEXT_ONLY
+    props: {
+      nodeValue: text,
+      children: [], // Text elements don't have children
+    },
+  };
+}</code></pre>
+
+      <p>
+        Tres decisiones definen este objeto:
+      </p>
+      <ol class="steps">
+        <li>
+          <strong>Un <code>type</code> centinela.</strong> En lugar de un nombre de etiqueta
+          real, usa el string especial <code>'TEXT_ONLY'</code>. Ese valor no existe en el
+          DOM: es una marca interna que el motor reconocerá más tarde para tratar el nodo de
+          manera distinta.
+        </li>
+        <li>
+          <strong>El contenido en <code>props.nodeValue</code>.</strong> El texto recibido se
+          guarda bajo la clave <code>nodeValue</code>, el mismo nombre que usa la API del DOM
+          para el contenido de un <code>Text</code>. No es casualidad: facilita volcarlo
+          directamente al nodo real.
+        </li>
+        <li>
+          <strong><code>children</code> vacío.</strong> Un nodo de texto es una hoja del árbol:
+          nunca tiene hijos, por lo que <code>children</code> se inicializa como un array vacío
+          <code>[]</code>. Esto mantiene la forma <code>{ type, props: { … children } }</code>
+          idéntica a la de cualquier otro elemento.
+        </li>
+      </ol>
+
+      <h2>Cómo lo trata createDom</h2>
+      <p>
+        La marca <code>TEXT_ONLY</code> cobra sentido cuando el motor materializa el elemento
+        en un nodo real del DOM. Esto sucede en <code>createDom</code>:
+      </p>
+
+      <div class="filename">src/React.ts</div>
+      <pre><code>function createDom(fiber) {
+  const dom =
+    fiber.type == "TEXT_ONLY"
+      ? document.createTextNode("")
+      : document.createElement(fiber.type)
+
+  updateDom(dom, {}, fiber.props)
+
+  return dom
+}</code></pre>
+
+      <p>
+        La bifurcación es directa: si el <code>type</code> del fiber es
+        <code>"TEXT_ONLY"</code>, se crea un <code>document.createTextNode("")</code> —un nodo
+        de texto vacío—; en cualquier otro caso se crea un elemento host con
+        <code>document.createElement(fiber.type)</code>. Acto seguido,
+        <code>updateDom(dom, {}, fiber.props)</code> aplica las props. Para un nodo de texto,
+        eso significa copiar <code>nodeValue</code> desde las props al nodo, porque
+        <code>nodeValue</code> pasa el filtro <code>isProperty</code> de
+        <a href="15-updatedom-props-eventos-estilos.html">updateDom</a> (no empieza por "on"
+        ni es <code>children</code>) y se asigna con <code>dom["nodeValue"] = …</code>. Así el
+        texto aparece en pantalla.
+      </p>
+
+      <h2>¿Por qué envolver el texto?</h2>
+      <p>
+        La razón es la <strong>uniformidad del árbol</strong>. El motor recorre, reconcilia y
+        confirma miles de nodos con un único conjunto de funciones —<code>reconcileChildren</code>,
+        <code>performUnitOfWork</code>, <code>commitWork</code>—. Todas ellas asumen que cada
+        nodo es un <code>Element</code> con <code>type</code> y <code>props.children</code>. Si
+        el texto se representara como un string "pelado" dentro de la lista de hijos, cada una de
+        esas funciones tendría que preguntar en cada paso "¿esto es texto o es un elemento?" y
+        ramificar su lógica. Al envolverlo, el texto se convierte en un ciudadano de primera clase
+        del árbol: tiene <code>type</code>, tiene <code>props</code>, tiene <code>children</code>
+        (vacío) y participa en la reconciliación por posición como cualquier otro hijo. La única
+        rama especial que sobrevive es la de <code>createDom</code>, que decide entre
+        <code>createTextNode</code> y <code>createElement</code>.
+      </p>
+
+      <div class="callout ok">
+        <span class="tag">Idea clave</span>
+        <p>
+          Todo hijo del árbol es un <code>Element</code>. El texto no es una excepción: es un
+          <code>Element</code> con <code>type: 'TEXT_ONLY'</code>. Esta homogeneidad es lo que
+          permite que el reconciliador y el <em>commit</em> traten texto y etiquetas con el mismo
+          código, salvo la única bifurcación de <code>createDom</code>.
+        </p>
+      </div>
+
+      <h2>Un ejemplo real: "Counter: {counter}"</h2>
+      <p>
+        El componente <code>Counter</code> ilustra la mezcla de texto estático y dinámico junto a
+        elementos host. Su <code>return</code> es:
+      </p>
+
+      <div class="filename">src/Examples/components/Counter.tsx</div>
+      <pre><code>return (
+  &lt;div&gt;
+    &lt;button onClick={() =&gt; {
+      setCounter(c =&gt; c + 1);
+    }}&gt;
+      Click me
+    &lt;/button&gt;
+    Counter: {counter}
+  &lt;/div&gt;
+);</code></pre>
+
+      <p>
+        Dentro del <code>&lt;div&gt;</code> conviven dos hijos: el <code>&lt;button&gt;</code>
+        (un nodo host) y, como hermano suyo, el texto <code>Counter: {counter}</code>. Ese texto
+        no es un único string: la interpolación <code>{counter}</code> lo parte, de modo que el
+        compilador entrega varios hijos —el string literal <code>"Counter: "</code> y el valor
+        numérico de <code>counter</code>—, cada uno de los cuales <code>createElement</code>
+        convierte en su propio elemento <code>TEXT_ONLY</code>. El resultado es un árbol donde el
+        <code>&lt;div&gt;</code> tiene como hijos: un nodo host <code>button</code> y uno o más
+        nodos <code>TEXT_ONLY</code> hermanos.
+      </p>
+
+      <div class="diagram">div (host)
+ ├─ button (host)          &lt;- document.createElement("button")
+ │   └─ TEXT_ONLY "Click me"
+ ├─ TEXT_ONLY "Counter: "  &lt;- document.createTextNode("")
+ └─ TEXT_ONLY  &lt;valor de counter&gt;</div>
+
+      <div class="callout info">
+        <span class="tag">Nota</span>
+        <p>
+          React real usa una idea equivalente: internamente representa los nodos de texto de forma
+          uniforme y los materializa como <code>Text</code> del DOM. La diferencia principal es que
+          React distingue además fragmentos, portales y otros tipos; este motor se limita al par
+          "objeto o <code>TEXT_ONLY</code>", que es todo lo que necesita para renderizar los
+          ejemplos.
+        </p>
+      </div>
+
+      <p>
+        Con el texto ya integrado al árbol como un elemento más, estamos listos para pasar de la
+        descripción estática (elementos) a la unidad de trabajo del motor: el <em>fiber</em>.
+      </p>
+
+      <div class="pager">
+        <a href="06-createelement-y-flattening.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">createElement y flattening</div>
+        </a>
+        <a class="next" href="08-estructura-fiber.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">La estructura Fiber</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

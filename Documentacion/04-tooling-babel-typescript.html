@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tooling: Babel + TypeScript · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a class="active" href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">De TSX a JavaScript</p>
+      <h1>Tooling: Babel + TypeScript</h1>
+      <p class="lead">
+        El navegador no entiende JSX ni TypeScript. Dos herramientas se encargan de traducir el
+        código fuente a JavaScript ejecutable: Babel realiza la transpilación y TypeScript
+        aporta el sistema de tipos. Ambas comparten una decisión central: el pragma
+        <code>React.createElement</code>.
+      </p>
+
+      <h2>La configuración de Babel</h2>
+      <p>
+        El archivo <code>.babelrc</code> declara tres presets, y cada uno resuelve un problema
+        distinto de la traducción:
+      </p>
+
+      <div class="filename">.babelrc</div>
+      <pre><code>{
+  "presets": [
+    ["@babel/preset-env", { "modules": false }],
+    ["@babel/preset-react", { "pragma": "React.createElement" }],
+    "@babel/preset-typescript"
+  ]
+}</code></pre>
+
+      <ul>
+        <li>
+          <strong><code>@babel/preset-env</code></strong> con <code>{ "modules": false }</code>:
+          transpila la sintaxis moderna de JavaScript a una versión ampliamente compatible, pero
+          deja intactos los <code>import</code>/<code>export</code> ES nativos en lugar de
+          convertirlos a CommonJS.
+        </li>
+        <li>
+          <strong><code>@babel/preset-react</code></strong> con
+          <code>{ "pragma": "React.createElement" }</code>: transforma cada etiqueta JSX en una
+          llamada a la función indicada por el pragma. Esta es la pieza que conecta la sintaxis
+          declarativa con el motor del proyecto.
+        </li>
+        <li>
+          <strong><code>@babel/preset-typescript</code></strong>: elimina las anotaciones de
+          tipo de los archivos <code>.ts</code>/<code>.tsx</code>. Nótese que <em>no</em>
+          comprueba tipos: solo los borra. La verificación es responsabilidad de TypeScript.
+        </li>
+      </ul>
+
+      <h2>La configuración de TypeScript</h2>
+      <p>
+        El <code>tsconfig.json</code> mantiene la coherencia con Babel. Lo crítico es que su
+        <code>jsxFactory</code> apunta exactamente a la misma función que el pragma de Babel:
+      </p>
+
+      <div class="filename">tsconfig.json</div>
+      <pre><code>{
+  "compilerOptions": {
+    "jsx": "react",
+    "jsxFactory": "React.createElement",
+    "jsxFragmentFactory": "React.Fragment",
+    "target": "es2020",
+    "lib": ["es2020", "dom"]
+  }
+}</code></pre>
+
+      <ul>
+        <li>
+          <strong><code>"jsx": "react"</code></strong>: indica a TypeScript que interprete la
+          sintaxis JSX según el modelo clásico de React, emitiendo llamadas a una fábrica.
+        </li>
+        <li>
+          <strong><code>"jsxFactory": "React.createElement"</code></strong>: nombra esa fábrica.
+          Debe coincidir con el pragma de Babel para que el tipado y la transpilación describan
+          la misma transformación.
+        </li>
+        <li>
+          <strong><code>"target": "es2020"</code></strong> y
+          <strong><code>"lib": ["es2020", "dom"]</code></strong>: fijan el nivel del lenguaje y
+          exponen las APIs del DOM que el motor usa (<code>document.createElement</code>,
+          <code>requestIdleCallback</code>, etc.).
+        </li>
+      </ul>
+
+      <div class="callout warn">
+        <span class="tag">Cuidado</span>
+        <p>
+          <code>jsxFragmentFactory</code> apunta a <code>React.Fragment</code>, pero ese símbolo
+          <strong>no está implementado</strong> en <code>src/React.ts</code>: aparece
+          únicamente referenciado en la declaración global de <code>Window</code> como opcional.
+          Usar la sintaxis de fragmento <code>&lt;&gt;...&lt;/&gt;</code> fallaría en tiempo de
+          ejecución. Es una de las limitaciones conocidas que se recogen en
+          <a href="19-diferencias-y-bugs.html">19 · Diferencias con React y bugs</a>.
+        </p>
+      </div>
+
+      <h2>Los scripts del proyecto</h2>
+      <p>
+        El <code>package.json</code> define cómo se compila y sirve el proyecto. Son dos pasos
+        encadenados sobre el CLI de Babel:
+      </p>
+
+      <div class="filename">package.json</div>
+      <pre><code>"scripts": {
+  "build": "babel src --out-dir public --extensions \".js,.jsx,.ts,.tsx\"",
+  "start": "npm run build &amp;&amp; npx serve public",
+  "format": "prettier --write ."
+}</code></pre>
+
+      <ul>
+        <li>
+          <strong><code>build</code></strong>: invoca Babel sobre todo el directorio
+          <code>src</code> y vuelca el resultado en <code>public</code>, procesando las cuatro
+          extensiones <code>.js,.jsx,.ts,.tsx</code>. Cada <code>src/App.tsx</code> se convierte
+          en <code>public/App.js</code>, <code>src/React.ts</code> en
+          <code>public/React.js</code>, y así sucesivamente.
+        </li>
+        <li>
+          <strong><code>start</code></strong>: ejecuta primero <code>build</code> y luego sirve
+          el directorio <code>public</code> con <code>npx serve</code>, de modo que el navegador
+          cargue el JavaScript ya transpilado.
+        </li>
+      </ul>
+
+      <h2>Del TSX a las llamadas createElement</h2>
+      <p>
+        El corazón del tooling es la transformación que hace el pragma. Cuando escribimos en
+        <code>src/App.tsx</code> algo como:
+      </p>
+
+      <div class="filename">src/App.tsx</div>
+      <pre><code>&lt;div style="background: salmon"&gt;
+  &lt;h1&gt;Construyendo React de manera casera&lt;/h1&gt;
+  &lt;Counter /&gt;
+&lt;/div&gt;</code></pre>
+
+      <p>
+        Babel lo reescribe, apoyándose en el pragma, en llamadas anidadas equivalentes a:
+      </p>
+
+      <pre><code>React.createElement(
+  "div",
+  { style: "background: salmon" },
+  React.createElement("h1", null, "Construyendo React de manera casera"),
+  React.createElement(Counter, null)
+)</code></pre>
+
+      <p>
+        Cada etiqueta se convierte en una invocación de <code>React.createElement</code> con
+        tres partes: el <code>type</code> (una cadena para elementos del host como
+        <code>"div"</code>, o la referencia a la función para componentes como
+        <code>Counter</code>), las <code>props</code>, y los <code>children</code> como
+        argumentos restantes. Es exactamente la firma que espera la función real del motor:
+      </p>
+
+      <div class="filename">src/React.ts</div>
+      <pre><code>export function createElement(
+  type: string,
+  props: Props,
+  ...children: any[]
+): Element { /* ... */ }</code></pre>
+
+      <div class="callout ok">
+        <span class="tag">Idea clave</span>
+        <p>
+          El pragma es el puente entre dos mundos: la sintaxis declarativa de JSX y la API
+          imperativa del motor. Sin él, Babel y TypeScript no sabrían a qué función traducir las
+          etiquetas. Por eso el mismo nombre —<code>React.createElement</code>— aparece
+          idénticamente en el <code>.babelrc</code> y en el <code>tsconfig.json</code>: cualquier
+          discrepancia rompería la traducción. El mecanismo se estudia en profundidad en
+          <a href="05-jsx-y-pragma.html">05 · JSX y el pragma createElement</a>.
+        </p>
+      </div>
+
+      <div class="callout info">
+        <span class="tag">Nota</span>
+        <p>
+          ¿Por qué <code>{ "modules": false }</code>? Porque el proyecto usa módulos ES nativos:
+          <code>src/App.tsx</code> hace <code>import { React } from './React.js'</code> y el
+          navegador los carga directamente vía <code>&lt;script type="module"&gt;</code>. Si Babel
+          convirtiera los <code>import</code>/<code>export</code> a CommonJS
+          (<code>require</code>/<code>module.exports</code>), el resultado no funcionaría en el
+          navegador sin un empaquetador. Dejar <code>modules: false</code> preserva la semántica
+          ES y permite servir el código sin bundler alguno.
+        </p>
+      </div>
+
+      <p>
+        Con el pipeline de compilación claro, el siguiente capítulo abre la caja del pragma y
+        detalla cómo se resuelve cada etiqueta: <a href="05-jsx-y-pragma.html">JSX y el pragma
+        createElement</a>.
+      </p>
+
+      <div class="pager">
+        <a href="03-arquitectura.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Arquitectura general</div>
+        </a>
+        <a class="next" href="05-jsx-y-pragma.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">JSX y el pragma createElement</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

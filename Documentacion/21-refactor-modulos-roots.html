@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Refactor: módulos y estado por-root · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a class="active" href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">De monolito a módulos</p>
+      <h1>Refactor: módulos y estado por-root</h1>
+      <p class="lead">
+        El motor pasó de un único archivo con variables globales de módulo a una carpeta
+        <code>src/react/</code> donde cada pieza tiene una responsabilidad clara y el estado
+        volátil vive encapsulado <em>por root</em>. Este capítulo explica qué se movió, por qué,
+        y cómo ese cambio habilita montar varios roots independientes en la misma página.
+      </p>
+
+      <h2>El punto de partida: un monolito con estado global</h2>
+      <p>
+        Las primeras versiones (documentadas hasta el capítulo
+        <a href="20-roadmap-y-ejercicios.html">20</a>) concentraban todo en
+        <code>src/React.ts</code>. El ciclo de render se coordinaba con variables
+        <strong>a nivel de módulo</strong>: <code>wipRoot</code> (árbol en construcción),
+        <code>currentRoot</code> (último árbol comprometido), <code>nextUnitOfWork</code>
+        (la próxima unidad de trabajo), <code>deletions</code> (fibers a borrar),
+        <code>wipEffects</code> (efectos pendientes), más el estado efímero del render en
+        curso: <code>wipFiber</code> y <code>hookIndex</code>.
+      </p>
+      <p>
+        Ese diseño funciona para <em>un</em> árbol. El problema aparece en cuanto querés
+        montar dos aplicaciones en la misma página: como todas esas variables son únicas y
+        compartidas por el módulo, un segundo <code>render()</code> pisaría el
+        <code>wipRoot</code> del primero. El estado del render de una app se filtra al de la
+        otra. La reconciliación deja de ser aislada.
+      </p>
+
+      <div class="callout warn">
+        <span class="tag">El problema de fondo</span>
+        <p>
+          Una variable global de módulo es, en la práctica, un <em>singleton implícito</em>.
+          Sirve mientras exista exactamente una instancia. En el momento en que la abstracción
+          necesita existir "N veces" (N roots), ese estado tiene que dejar de ser global y
+          pasar a ser un campo de un objeto que se pueda instanciar tantas veces como haga falta.
+        </p>
+      </div>
+
+      <h2>La nueva estructura de módulos</h2>
+      <p>
+        El motor se dividió en once módulos dentro de <code>src/react/</code>. Cada uno importa
+        de los demás por su nombre, sin dependencias circulares problemáticas, y
+        <code>index.ts</code> reexpone todo como el objeto público <code>React</code>.
+      </p>
+
+      <table>
+        <thead>
+          <tr><th>Módulo</th><th>Responsabilidad</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>types.ts</code></td><td>Todos los tipos del núcleo: <code>ReactElement</code>, <code>Fiber</code>, la unión <code>Hook</code>, <code>ReactContext</code> y el <code>RootStateContainer</code>. Sin lógica.</td></tr>
+          <tr><td><code>element.ts</code></td><td><code>createElement</code>, <code>createTextElement</code>, <code>flatten</code> y <code>Fragment</code>: construcción y normalización de elementos.</td></tr>
+          <tr><td><code>dom.ts</code></td><td><code>createDom</code> / <code>updateDom</code>: props, eventos y estilos sobre nodos reales del DOM.</td></tr>
+          <tr><td><code>reconciler.ts</code></td><td>El corazón: <code>beginWork</code>, <code>completeWork</code>, <code>reconcileChildren</code>, <code>createWorkInProgress</code>, <code>canBailout</code>, <code>cloneChildFibers</code>, <code>performUnitOfWork</code> y <code>commitRoot</code>.</td></tr>
+          <tr><td><code>hooks.ts</code></td><td><code>useState</code>, <code>useReducer</code>, <code>useRef</code>, <code>useMemo</code>, <code>useCallback</code>, <code>useEffect</code>, <code>useContext</code>, más los helpers <code>slot</code> y <code>commitHook</code>.</td></tr>
+          <tr><td><code>scheduler.ts</code></td><td><code>scheduleUpdate</code>, <code>enqueueRoot</code>, <code>flushSync</code>, <code>prepareFreshWip</code> y el <em>batching</em> por microtask sobre un conjunto de roots pendientes.</td></tr>
+          <tr><td><code>root.ts</code></td><td><code>createRoot</code>, <code>updateContainer</code> y la API legacy <code>render</code>. Puntos de entrada.</td></tr>
+          <tr><td><code>context.ts</code></td><td><code>createContext</code> y el componente <code>Provider</code> marcado que el reconciliador reconoce.</td></tr>
+          <tr><td><code>component.ts</code></td><td>La clase base <code>Component</code> y <code>isErrorBoundary</code>, para componentes de clase y Error Boundaries.</td></tr>
+          <tr><td><code>internals.ts</code></td><td>El estado efímero del render en curso (<code>R</code>) y la pila de contextos (<code>contextStack</code>).</td></tr>
+          <tr><td><code>index.ts</code></td><td>Barrel público: reúne todo en el objeto <code>React</code> y define <code>memo</code>.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Dos clases de estado: por-root vs. render-scoped</h2>
+      <p>
+        El refactor separa deliberadamente dos naturalezas de estado que antes convivían como
+        variables sueltas.
+      </p>
+
+      <h3>(a) Estado por-root: <code>RootStateContainer</code></h3>
+      <p>
+        Todo lo que <strong>persiste entre renders y pertenece a un árbol concreto</strong> se
+        agrupó en una interfaz en <code>types.ts</code>. Cada root tiene su propia instancia:
+      </p>
+
+      <div class="filename">src/react/types.ts</div>
+      <pre><code>export interface RootStateContainer {
+  container: DomNode;
+  /** Árbol comprometido en el último commit. */
+  currentRoot: Fiber | null;
+  /** Árbol en construcción. */
+  wipRoot: Fiber | null;
+  nextUnitOfWork: Fiber | null;
+  deletions: Fiber[];
+  /** Efectos pasivos recolectados en el render en curso, se ejecutan tras el commit. */
+  pendingEffects: Array&lt;() =&gt; void&gt;;
+  /** Fibers marcados como sucios por setState (para saber desde dónde re-renderizar). */
+  dirtyFibers: Set&lt;Fiber&gt;;
+}</code></pre>
+
+      <p>
+        Comparación directa con el pasado: <code>wipRoot</code>, <code>currentRoot</code>,
+        <code>nextUnitOfWork</code> y <code>deletions</code> eran globales; ahora son campos de
+        este contenedor. <code>wipEffects</code> se convirtió en <code>pendingEffects</code>
+        (una lista de efectos <em>de este root</em>, resolviendo el riesgo que señalaba el
+        roadmap de mezclar efectos entre componentes). Y <code>dirtyFibers</code> es nuevo:
+        registra qué fibers ensuciaron un <code>setState</code>, base del bailout.
+      </p>
+
+      <h3>(b) Estado render-scoped: <code>internals.ts</code> y el objeto <code>R</code></h3>
+      <p>
+        En cambio, hay estado que es intrínsecamente <strong>efímero</strong>: solo tiene
+        sentido mientras se ejecuta el cuerpo de un componente. Ese estado <em>sí</em> puede
+        ser un singleton, porque solo un fiber se renderiza a la vez. Vive en <code>R</code>:
+      </p>
+
+      <div class="filename">src/react/internals.ts</div>
+      <pre><code>export const R: RenderState = {
+  wipFiber: null,       // fiber cuyo cuerpo se está ejecutando AHORA
+  hookIndex: 0,         // próximo hook a leer/crear en wipFiber.hooks
+  activeRoot: null,     // root cuyo árbol se está construyendo
+  forceRenderDepth: 0,  // &gt; 0 dentro de un Provider cuyo value cambió
+};
+
+/** Pila de valores de contexto (push al entrar a un Provider, pop al salir). */
+export const contextStack: Array&lt;{ context: ReactContext&lt;unknown&gt;; value: unknown }&gt; = [];</code></pre>
+
+      <div class="callout info">
+        <span class="tag">Por qué esta división</span>
+        <p>
+          <code>R.wipFiber</code> y <code>R.hookIndex</code> son el equivalente al
+          <em>currentlyRenderingFiber</em> de React: apuntan al componente que se está
+          ejecutando en este instante. No hace falta una copia por root porque el render es
+          secuencial. En cambio <code>wipRoot</code> o <code>currentRoot</code> describen un
+          árbol que sobrevive entre renders, así que <strong>sí</strong> necesitan una
+          instancia por root. La regla: lo que sobrevive al render se encapsula por root; lo
+          que solo existe durante el render puede ser singleton.
+        </p>
+      </div>
+
+      <h2><code>createRoot</code>: un ciclo de vida independiente</h2>
+      <p>
+        <code>createRoot(container)</code> crea un <code>RootStateContainer</code> fresco y
+        devuelve un objeto con <code>render()</code> y <code>unmount()</code>. Nada de esto
+        toca variables globales: todo el estado del árbol vive en la <em>clausura</em> de ese
+        root.
+      </p>
+
+      <div class="filename">src/react/root.ts</div>
+      <pre><code>export function createRoot(container: DomNode): ReactRoot {
+  const state = createRootState(container);
+  return {
+    render(element: ReactElement): void {
+      // El render inicial se drena de forma síncrona (resultado determinista).
+      flushSync(() =&gt; {
+        updateContainer(state, element);
+        enqueueRoot(state);
+      });
+    },
+    unmount(): void {
+      if (state.container instanceof HTMLElement) state.container.innerHTML = '';
+      state.currentRoot = null;
+      state.wipRoot = null;
+      state.nextUnitOfWork = null;
+    },
+    _internal: state,
+  };
+}</code></pre>
+
+      <p>
+        <code>updateContainer</code> es quien decide entre montaje inicial y re-render, y
+        prepara el work-in-progress de <em>este</em> root sin tocar ningún otro:
+      </p>
+
+      <div class="filename">src/react/root.ts</div>
+      <pre><code>function updateContainer(root: RootStateContainer, element: ReactElement): void {
+  if (root.currentRoot) {
+    // Re-render del mismo root: doble buffer sobre el árbol comprometido.
+    root.wipRoot = createWorkInProgress(root.currentRoot, { children: [element] });
+  } else {
+    // Primer montaje.
+    root.wipRoot = createHostRootFiber(root.container, { children: [element] });
+  }
+  root.wipRoot.dom = root.container;
+  root.wipRoot.root = root;
+  root.deletions = [];
+  root.pendingEffects = [];
+  contextStack.length = 0;
+  R.forceRenderDepth = 0;
+  root.nextUnitOfWork = root.wipRoot;
+}</code></pre>
+
+      <p>
+        Fijate en el detalle clave: <code>root.wipRoot.root = root</code>. Cada fiber guarda un
+        puntero a su <code>RootStateContainer</code> (campo <code>root</code> en el
+        <a href="08-estructura-fiber.html">Fiber</a>). Así, cuando un <code>setState</code>
+        dispara <code>scheduleUpdate(fiber)</code>, el scheduler recupera
+        <code>fiber.root</code> y agenda <em>solo</em> ese root, sin ambigüedad sobre a qué
+        árbol pertenece la actualización.
+      </p>
+
+      <h2>El scheduler orquesta múltiples roots</h2>
+      <p>
+        El scheduler mantiene un <code>Set&lt;RootStateContainer&gt;</code> de roots pendientes.
+        Un microtask drena todos los que tengan trabajo, cada uno con su propio
+        <code>workLoopSync</code> y <code>commitRoot</code>. <code>R.activeRoot</code> apunta,
+        durante el drenado, al root que se está procesando en ese momento.
+      </p>
+
+      <div class="diagram">
+  React.createRoot(#app1) ──► RootStateContainer A ─┐
+                                                    │
+  React.createRoot(#app2) ──► RootStateContainer B ─┤
+                                                    ▼
+                                          pendingRoots: Set{ A, B }
+                                                    │  (microtask / flushSync)
+                                                    ▼
+                                       for root of roots:
+                                          R.activeRoot = root
+                                          workLoopSync(root)   ── usa root.nextUnitOfWork
+                                          commitRoot(root)     ── usa root.wipRoot / deletions
+                                          root.dirtyFibers.clear()
+
+  A.currentRoot ─── árbol de #app1     B.currentRoot ─── árbol de #app2
+       (aislados: ningún campo se comparte entre A y B)
+      </div>
+
+      <h2>Montar varios roots sin interferencia</h2>
+      <p>
+        La consecuencia práctica del encapsulamiento es que este código funciona sin que una
+        app pise a la otra: cada <code>createRoot</code> mantiene su propio
+        <code>currentRoot</code>, su propia cola de <code>deletions</code> y sus propios
+        <code>pendingEffects</code>.
+      </p>
+
+      <div class="filename">ejemplo de uso</div>
+      <pre><code>const app1 = React.createRoot(document.getElementById('app1'));
+const app2 = React.createRoot(document.getElementById('app2'));
+
+app1.render(React.createElement(Contador, null));
+app2.render(React.createElement(Reloj, null));
+
+// Un setState dentro de Contador agenda SOLO el root de app1;
+// el árbol de app2 no se recalcula ni se re-commitea.
+app1.unmount(); // limpia app1 sin tocar app2</code></pre>
+
+      <div class="callout ok">
+        <span class="tag">Por qué encapsular habilita múltiples roots</span>
+        <p>
+          Mientras el estado del árbol vivía en variables de módulo, "el motor" era un objeto
+          único: solo podía existir un <code>wipRoot</code> a la vez, así que dos apps competían
+          por la misma memoria. Al mover ese estado a <code>RootStateContainer</code> y darle a
+          cada fiber un puntero <code>fiber.root</code>, cada árbol se vuelve autocontenido. El
+          scheduler los recorre en un <code>Set</code> y el estado render-scoped (<code>R</code>)
+          se reasigna al entrar a cada root. Así, N roots conviven, se actualizan de forma
+          independiente y se desmontan sin efectos colaterales, exactamente como el
+          <code>createRoot</code> de React 18.
+        </p>
+      </div>
+
+      <p>
+        En el próximo capítulo veremos la otra mitad del refactor: cómo <code>types.ts</code>
+        elimina el <code>any</code> del núcleo y tipa por completo fibers, hooks y contextos.
+      </p>
+
+      <div class="pager">
+        <a href="20-roadmap-y-ejercicios.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Roadmap y ejercicios</div>
+        </a>
+        <a class="next" href="22-tipado-completo.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Tipado completo</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

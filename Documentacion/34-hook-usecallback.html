@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>useCallback — ciclo de vida completo · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a class="active" href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Función cacheada</p>
+      <h1>useCallback — ciclo de vida completo</h1>
+      <p class="lead">
+        <code>useCallback</code> memoiza una <em>función</em> en vez de un valor de datos. En este
+        motor no es un hook aparte: es literalmente <code>useMemo(() =&gt; fn, deps)</code>. Su razón
+        de existir es dar <strong>identidad estable</strong> a un callback entre renders.
+      </p>
+
+      <h2>Firma y para qué sirve</h2>
+      <p>
+        La firma real en <code>src/react/hooks.ts</code> es
+        <code>useCallback&lt;T&gt;(callback: T, deps: unknown[] | undefined): T</code>, donde
+        <code>T</code> es una función. Devuelve <em>la misma</em> función mientras las deps no
+        cambien, en vez de la nueva instancia que el componente crea en cada render.
+      </p>
+      <div class="filename">uso mínimo</div>
+      <pre><code>function Padre({ items }) {
+  const [n, setN] = useState(0);
+  // `onSelect` conserva su identidad aunque `n` cambie.
+  const onSelect = useCallback((id) =&gt; console.log('elegido', id), []);
+  return h(ListaMemo, { items, onSelect });
+}</code></pre>
+
+      <h2>Dónde vive el estado</h2>
+      <p>
+        No hay un <code>CallbackHook</code> en <code>src/react/types.ts</code>. Como
+        <code>useCallback</code> se implementa sobre <code>useMemo</code>, el estado que persiste es
+        un <code>MemoHook</code> corriente, cuyo <code>value</code> resulta ser la función:
+      </p>
+      <div class="filename">src/react/types.ts</div>
+      <pre><code>export interface MemoHook&lt;T = unknown&gt; {
+  tag: 'memo';
+  value: T;                       // aquí: la función memoizada
+  deps: unknown[] | undefined;
+}</code></pre>
+      <p>
+        Igual que cualquier hook, ese objeto se reutiliza entre renders leyéndolo desde
+        <code>wipFiber.alternate.hooks[hookIndex]</code>, de modo que la referencia guardada en
+        <code>value</code> sobrevive de un render al siguiente.
+      </p>
+
+      <h2>Renders siguientes (update): es useMemo por dentro</h2>
+      <p>
+        La implementación completa cabe en una línea, y es la clave de todo el capítulo:
+      </p>
+      <div class="filename">src/react/hooks.ts</div>
+      <pre><code>export function useCallback&lt;T extends (...args: never[]) =&gt; unknown&gt;(
+  callback: T,
+  deps: unknown[] | undefined,
+): T {
+  return useMemo(() =&gt; callback, deps);
+}</code></pre>
+      <p>
+        En vez de pasarle a <code>useMemo</code> una fábrica que <em>calcula</em> un valor, se le
+        pasa una fábrica trivial <code>() =&gt; callback</code> que simplemente <em>devuelve la
+        función</em>. Todo lo demás lo hereda de <code>useMemo</code>:
+      </p>
+      <div class="filename">src/react/hooks.ts (useMemo, para recordar)</div>
+      <pre><code>let hook: MemoHook&lt;T&gt;;
+if (oldMemo &amp;&amp; deps &amp;&amp; depsEqual(deps, oldMemo.deps)) {
+  hook = oldMemo; // deps iguales: reusar el valor cacheado (= la función anterior)
+} else {
+  hook = { tag: 'memo', value: factory(), deps }; // factory() devuelve el callback nuevo
+}</code></pre>
+      <ul>
+        <li>Si <code>depsEqual</code> es <code>true</code>, <code>hook = oldMemo</code>: se devuelve
+          la <strong>misma</strong> referencia de función del render anterior. El <code>callback</code>
+          nuevo que recibió esta llamada se descarta.</li>
+        <li>Si alguna dep cambió, <code>factory()</code> devuelve el <code>callback</code> recién
+          creado y esa pasa a ser la nueva identidad estable hasta el próximo cambio de deps.</li>
+      </ul>
+      <div class="callout info">
+        <span class="tag">Sutileza: la clausura sí es nueva</span>
+        <p>
+          El componente <em>siempre</em> crea una función nueva en cada render (es una expresión
+          literal). Lo que <code>useCallback</code> hace no es evitar esa creación, sino
+          <strong>ignorarla</strong> y seguir devolviendo la vieja mientras las deps coincidan. Por
+          eso, si el callback lee variables que quedaron fuera de <code>deps</code>, va a
+          <em>capturar valores viejos</em> (stale closure): la identidad estable tiene ese costo.
+        </p>
+      </div>
+
+      <h2>La actualización / disparador</h2>
+      <p>
+        Como <code>useMemo</code>, <code>useCallback</code> <strong>no tiene disparador</strong>: no
+        crea <code>dispatch</code>, no encola en ninguna <code>queue</code> ni llama a
+        <code>scheduleUpdate</code>. Lo que lo hace "recalcular" (devolver la función nueva) es un
+        re-render provocado por otro hook combinado con un cambio en <code>Object.is</code> de alguna
+        dependencia.
+      </p>
+
+      <h2>Orden de ejecución y por qué sirve con memo</h2>
+      <p>
+        La evaluación ocurre en línea durante el render, en la posición donde se llama. Su utilidad
+        real aparece al combinarlo con <a href="25-bailout-y-memo.html">memo</a>. Un
+        componente envuelto en <code>memo</code> hace bailout comparando props con
+        <code>shallowEqualProps</code> (<code>Object.is</code> por clave). Si el padre le pasa una
+        función literal nueva en cada render, esa prop cambia de identidad y el bailout
+        <strong>nunca</strong> ocurre. Estabilizando la función con <code>useCallback</code>, la prop
+        conserva su referencia y el hijo memoizado puede efectivamente saltarse el re-render.
+      </p>
+      <table>
+        <thead><tr><th>Sin useCallback</th><th>Con useCallback([])</th></tr></thead>
+        <tbody>
+          <tr><td>Función nueva cada render</td><td>Misma referencia entre renders</td></tr>
+          <tr><td><code>shallowEqualProps</code> del hijo memo da <code>false</code></td><td>La prop coincide por <code>Object.is</code></td></tr>
+          <tr><td>El hijo memo se re-renderiza siempre</td><td>El hijo memo hace bailout</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Reglas de los hooks</h2>
+      <p>
+        Al delegar en <code>useMemo</code>, <code>useCallback</code> consume exactamente
+        <strong>un</strong> slot de hook y avanza <code>R.hookIndex</code> una vez (vía
+        <code>commitHook</code>). Debe llamarse incondicionalmente y en orden fijo: si lo saltearas
+        en algún render, la posición del <code>MemoHook</code> se correría y el motor recuperaría el
+        hook equivocado desde <code>fiber.alternate.hooks</code>.
+      </p>
+
+      <div class="callout ok">
+        <span class="tag">Test que lo fija</span>
+        <p>
+          El test <em>"useCallback devuelve la misma función si deps no cambian"</em> monta un
+          componente con <code>const cb = useCallback(() =&gt; {}, [])</code> y guarda cada
+          <code>cb</code> en un arreglo. Tras un <code>setB(1)</code> que fuerza el re-render,
+          <code>cbs[0]</code> y <code>cbs[1]</code> son <code>toBe</code> (la misma referencia):
+          las deps <code>[]</code> nunca cambian, así que <code>depsEqual</code> siempre da
+          <code>true</code> y se reusa la función original.
+        </p>
+      </div>
+
+      <h2>Diagrama de secuencia</h2>
+      <div class="diagram">
+  useCallback(cb, deps)  ≡  useMemo(() =&gt; cb, deps)
+
+  MOUNT
+    factory = () =&gt; cbA        old = undefined
+    value = factory() = cbA    deps = []          ──►  devuelve cbA
+
+  UPDATE por setB(1)   ── el componente crea cbB (función nueva, literal)
+    useCallback(cbB, [])  →  useMemo(() =&gt; cbB, [])
+      depsEqual([], []) = true
+      hook = oldMemo   ──►  devuelve cbA   (¡cbB se descarta!)   cbs[0] === cbs[1]
+
+  UPDATE con deps distintas ── depsEqual = false
+      value = factory() = cbNueva  ──►  devuelve la función nueva; nueva identidad estable
+      </div>
+
+      <div class="pager">
+        <a href="33-hook-usememo.html"><div class="dir">← Anterior</div><div class="lbl">useMemo — ciclo de vida</div></a>
+        <a class="next" href="35-hook-useeffect.html"><div class="dir">Siguiente →</div><div class="lbl">useEffect — ciclo de vida</div></a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tipado completo con TypeScript · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a class="active" href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Adiós al any</p>
+      <h1>Tipado completo con TypeScript</h1>
+      <p class="lead">
+        El refactor no solo reorganizó el motor en módulos: también lo tipó de punta a punta.
+        <code>src/react/types.ts</code> describe cada estructura del núcleo —elementos, fibers,
+        hooks, contextos y el estado por-root— de modo que el compilador atrape errores que
+        antes solo aparecían en tiempo de ejecución. Este capítulo recorre esos tipos y muestra
+        cómo la unión discriminada de <code>Hook</code> permite razonar sobre cada hook con
+        seguridad.
+      </p>
+
+      <h2>De dónde se parte: el <code>any</code> como deuda</h2>
+      <p>
+        Una implementación temprana de un motor así abusa del <code>any</code>: los props son
+        <code>any</code>, el fiber es <code>any</code>, los hooks son un array heterogéneo sin
+        forma común. Funciona, pero cada acceso a un campo es una apuesta. El objetivo del
+        tipado es convertir esas apuestas en garantías: si un fiber puede no tener DOM, el tipo
+        lo dice (<code>DomNode | null</code>); si un hook es de estado, sus campos
+        (<code>queue</code>, <code>dispatch</code>) existen y tienen forma conocida.
+      </p>
+
+      <h2>El elemento y sus tipos base</h2>
+      <p>
+        Todo empieza en <code>ReactElement</code>, la descripción inmutable que produce
+        <code>createElement</code>. Su <code>type</code> es una unión cerrada:
+        <code>ElementType</code>.
+      </p>
+
+      <div class="filename">src/react/types.ts</div>
+      <pre><code>/** El `type` de un elemento: etiqueta host, componente función, clase o Fragment. */
+export type ElementType =
+  | string
+  | FunctionComponent&lt;any&gt;
+  | ComponentClass&lt;any&gt;
+  | FragmentType;
+
+/** Descripción inmutable de UI producida por `createElement`. */
+export interface ReactElement {
+  type: ElementType;
+  props: Props;
+  key: Key;
+}</code></pre>
+
+      <p>
+        <code>FunctionComponent&lt;P&gt;</code> es una función que recibe props y devuelve
+        <code>ReactElement | null</code> (nótese el <code>null</code>: habilita el early-return
+        de un componente). <code>ComponentClass</code> describe el <em>constructor</em> —con su
+        <code>getDerivedStateFromError</code> estático— y <code>ComponentInstance</code> la
+        instancia viva, ambos usados por los Error Boundaries. <code>Key</code> es
+        <code>string | number | null</code>, la clave de reconciliación que veremos en
+        <a href="23-reconciliacion-por-key.html">Reconciliación por key</a>.
+      </p>
+
+      <h2>El Fiber: cada campo declarado</h2>
+      <p>
+        El <a href="08-estructura-fiber.html">Fiber</a> es la estructura más grande y la que más
+        se benefició del tipado. Antes, campos como <code>alternate</code>, <code>hooks</code> o
+        <code>stateNode</code> eran <code>any</code>; ahora cada uno declara exactamente qué
+        puede contener y cuándo puede ser <code>null</code>.
+      </p>
+
+      <div class="filename">src/react/types.ts</div>
+      <pre><code>export interface Fiber {
+  type: ElementType | 'ROOT';
+  props: Props;
+  key: Key;
+
+  dom: DomNode | null;              // solo fibers host y el root
+
+  parent: Fiber | null;
+  child: Fiber | null;
+  sibling: Fiber | null;
+
+  alternate: Fiber | null;          // el fiber del render anterior (doble buffer)
+  effectTag: EffectTag;             // 'PLACEMENT' | 'UPDATE' | 'DELETION' | 'NONE'
+  index: number;                    // posición entre hermanos (movimientos con keys)
+  moved: boolean;                   // ¿reusado pero reubicado en el DOM?
+
+  hooks: Hook[] | null;             // hooks del componente función, en orden
+  stateNode: ComponentInstance | null;  // instancia de clase, si aplica
+  hasPendingUpdate: boolean;        // ¿setState pendiente? (para el bailout)
+
+  providerContext: ReactContext&lt;unknown&gt; | null;
+  providerForced: boolean;
+  ctxDepth: number;                 // pila de contextos al empezar (error boundaries)
+  forceDepth: number;
+
+  root: RootStateContainer | null;  // raíz a la que pertenece
+}</code></pre>
+
+      <p>
+        Los tres punteros <code>parent</code>/<code>child</code>/<code>sibling</code> tipados
+        como <code>Fiber | null</code> hacen que el recorrido del árbol (en
+        <code>performUnitOfWork</code>) sea a prueba de accesos a <code>null</code>: el
+        compilador exige el chequeo antes de bajar por <code>node.child</code>. Y
+        <code>root: RootStateContainer | null</code> es el puntero que —como vimos en el
+        <a href="21-refactor-modulos-roots.html">capítulo anterior</a>— conecta cada fiber con
+        el estado de su root para agendar re-renders.
+      </p>
+
+      <h2>La unión discriminada de <code>Hook</code></h2>
+      <p>
+        Aquí está la pieza más elegante del tipado. Los siete hooks del motor guardan datos muy
+        distintos: <code>useState</code> necesita una cola de actualizaciones,
+        <code>useEffect</code> un cleanup, <code>useRef</code> un objeto <code>{ current }</code>.
+        En vez de un tipo laxo con todo opcional, cada variante es una interfaz propia con un
+        campo literal <code>tag</code> que la identifica. La unión de todas es <code>Hook</code>.
+      </p>
+
+      <div class="filename">src/react/types.ts</div>
+      <pre><code>export interface StateHook&lt;S = unknown&gt; {
+  tag: 'state';
+  state: S;
+  queue: Array&lt;(prev: S) =&gt; S&gt;;
+  dispatch: Dispatch&lt;SetStateAction&lt;S&gt;&gt;;
+}
+
+export interface EffectHook {
+  tag: 'effect';
+  effect: () =&gt; void | (() =&gt; void);
+  deps: unknown[] | undefined;
+  cleanup: (() =&gt; void) | undefined;
+  hasChanged: boolean;
+}
+
+export interface RefHook&lt;T = unknown&gt; {
+  tag: 'ref';
+  ref: { current: T };
+}
+
+export type Hook =
+  | StateHook
+  | ReducerHook
+  | EffectHook
+  | RefHook
+  | MemoHook
+  | ContextHook;</code></pre>
+
+      <p>
+        Las variantes restantes siguen el mismo patrón: <code>ReducerHook</code> añade
+        <code>reducer</code> y una <code>queue</code> de acciones; <code>MemoHook</code> guarda
+        <code>value</code> y <code>deps</code> (lo usa tanto <code>useMemo</code> como
+        <code>useCallback</code>); <code>ContextHook</code> guarda el <code>context</code> y su
+        <code>value</code> leído.
+      </p>
+
+      <h2>Cómo el <code>tag</code> discrimina en runtime</h2>
+      <p>
+        El literal <code>tag</code> cumple doble función. En <em>compilación</em>, TypeScript
+        estrecha el tipo: dentro de un <code>if (hook.tag === 'effect')</code> el compilador
+        <em>sabe</em> que <code>hook</code> es un <code>EffectHook</code> y por tanto expone
+        <code>effect</code>, <code>cleanup</code> y <code>hasChanged</code>. En
+        <em>ejecución</em>, ese mismo chequeo filtra el hook correcto de un array heterogéneo.
+        Dos lugares del reconciliador lo usan exactamente así.
+      </p>
+
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>/** Recolecta los efectos pasivos (useEffect) que cambiaron, para el commit. */
+function collectPassiveEffects(fiber: Fiber): void {
+  if (!fiber.hooks) return;
+  const root = fiber.root;
+  if (!root) return;
+  for (const hook of fiber.hooks) {
+    if (hook.tag === 'effect' &amp;&amp; hook.hasChanged) {
+      const eff = hook as EffectHook;
+      root.pendingEffects.push(() =&gt; {
+        if (typeof eff.cleanup === 'function') eff.cleanup();
+        const cleanup = eff.effect();
+        eff.cleanup = typeof cleanup === 'function' ? cleanup : undefined;
+      });
+    }
+  }
+}</code></pre>
+
+      <p>
+        Y en la fase de borrado, <code>runCleanups</code> recorre el mismo array de hooks
+        mezclados y ejecuta solo los cleanups de los efectos, filtrando otra vez por el
+        <code>tag</code>:
+      </p>
+
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>function runCleanups(fiber: Fiber): void {
+  if (fiber.hooks) {
+    for (const hook of fiber.hooks) {
+      if (hook.tag === 'effect' &amp;&amp; typeof hook.cleanup === 'function') {
+        hook.cleanup();
+      }
+    }
+  }
+  // ... recorre recursivamente los hijos
+}</code></pre>
+
+      <p>
+        Sin la unión discriminada, ese <code>hook.cleanup</code> obligaría a un
+        <code>any</code> o a un cast inseguro. Con ella, el <code>tag</code> es la única fuente
+        de verdad y el acceso queda validado por el compilador.
+      </p>
+
+      <table>
+        <thead>
+          <tr><th>Hook</th><th><code>tag</code></th><th>Campos característicos</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>useState</code></td><td><code>'state'</code></td><td><code>state</code>, <code>queue</code>, <code>dispatch</code></td></tr>
+          <tr><td><code>useReducer</code></td><td><code>'reducer'</code></td><td><code>state</code>, <code>queue</code>, <code>reducer</code>, <code>dispatch</code></td></tr>
+          <tr><td><code>useEffect</code></td><td><code>'effect'</code></td><td><code>effect</code>, <code>deps</code>, <code>cleanup</code>, <code>hasChanged</code></td></tr>
+          <tr><td><code>useRef</code></td><td><code>'ref'</code></td><td><code>ref: { current }</code></td></tr>
+          <tr><td><code>useMemo</code> / <code>useCallback</code></td><td><code>'memo'</code></td><td><code>value</code>, <code>deps</code></td></tr>
+          <tr><td><code>useContext</code></td><td><code>'context'</code></td><td><code>context</code>, <code>value</code></td></tr>
+        </tbody>
+      </table>
+
+      <h2>Context y el estado por-root, también tipados</h2>
+      <p>
+        <code>ReactContext&lt;T&gt;</code> parametriza el valor del contexto: su
+        <code>_currentValue</code>, <code>_defaultValue</code> y el <code>Provider</code>
+        comparten el mismo <code>T</code>, de modo que <code>useContext(ctx)</code> devuelve el
+        tipo correcto sin casts. Y <code>RootStateContainer</code> —visto en el capítulo
+        anterior— tipa cada campo del estado por-root: <code>currentRoot</code>/<code>wipRoot</code>
+        como <code>Fiber | null</code>, <code>pendingEffects</code> como
+        <code>Array&lt;() =&gt; void&gt;</code>, <code>dirtyFibers</code> como
+        <code>Set&lt;Fiber&gt;</code>. También se tipa <code>MemoComponent</code>, el envoltorio
+        de <code>memo</code>, con su marca <code>$$typeof: 'react.memo'</code> que el
+        reconciliador usa para reconocerlo.
+      </p>
+
+      <div class="callout info">
+        <span class="tag">Dónde el any es inevitable</span>
+        <p>
+          El propio encabezado de <code>types.ts</code> lo admite: <em>"no se usa <code>any</code>
+          salvo en fronteras inevitables"</em>. Esas fronteras son dos. Primera, las
+          <strong>props arbitrarias del usuario</strong>: <code>Props</code> se declara como
+          <code>{ [key: string]: unknown }</code> —y <code>ElementType</code> acepta
+          <code>FunctionComponent&lt;any&gt;</code>— porque el motor no puede conocer de antemano
+          la forma de los props de un componente cualquiera. Segunda, el <strong>mapa de
+          estilos</strong>: <code>StyleObject = Record&lt;string, string | number&gt;</code>, un
+          diccionario abierto que refleja la naturaleza dinámica del objeto <code>style</code>
+          del DOM. En ambos casos el <code>any</code>/<code>unknown</code> vive en el borde del
+          sistema, no en su núcleo: apenas cruza hacia adentro, se estrecha con guardas de tipo.
+        </p>
+      </div>
+
+      <div class="diagram">
+  Borde del sistema (any/unknown)          Núcleo (totalmente tipado)
+  ─────────────────────────────           ──────────────────────────────
+  props del usuario  ─┐
+  Props[key]: unknown │  guardas de tipo    Fiber, Hook (unión por tag),
+  StyleObject         ├───────────────────► ReactElement, ReactContext&lt;T&gt;,
+  FunctionComponent   │  (hook.tag ===...)  RootStateContainer
+    &lt;any&gt;             ┘                      → el compilador garantiza los accesos
+      </div>
+
+      <p>
+        El resultado es un motor donde el compilador es un colaborador: refactorizar el
+        reconciliador o agregar un hook nuevo obliga a declarar su <code>tag</code> y su forma,
+        y cualquier acceso incoherente se marca antes de ejecutar una sola línea. En el próximo
+        capítulo aprovecharemos justamente el campo <code>key</code> de <code>ReactElement</code>
+        y <code>Fiber</code> para reconciliar listas por clave.
+      </p>
+
+      <div class="pager">
+        <a href="21-refactor-modulos-roots.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Refactor: módulos y roots</div>
+        </a>
+        <a class="next" href="23-reconciliacion-por-key.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Reconciliación por key</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

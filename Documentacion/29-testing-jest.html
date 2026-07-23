@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Testing con Jest + jsdom · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a class="active" href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Confianza mediante tests</p>
+      <h1>Testing con Jest + jsdom</h1>
+      <p class="lead">Un motor de renderizado sin tests es una hipótesis. La batería de <code>engine.test.ts</code> ejerce el ciclo completo —render, hooks, reconciliación por key, error boundaries— contra un DOM real de jsdom, de forma determinista gracias a <code>flushSync</code>. Este capítulo explica el setup y cómo está estructurada la cobertura.</p>
+
+      <h2>El setup: jsdom + babel-jest</h2>
+      <p>El motor está pensado para el navegador (usa ES modules con extensión <code>.js</code> en los imports y se compila con <code>modules:false</code> para no romper el bundling nativo). Node no puede ejecutar eso tal cual, así que la configuración de tests define un entorno de transpilación propio, deliberadamente independiente del build.</p>
+      <div class="filename">jest.config.js</div>
+      <pre><code>module.exports = {
+  testEnvironment: 'jsdom',
+  testMatch: ['**/__tests__/**/*.test.ts?(x)', '**/*.test.ts?(x)'],
+  // Los imports usan extensión .js (requerida por ES modules en el navegador);
+  // aquí la quitamos para resolver los archivos .ts en los tests.
+  moduleNameMapper: {
+    '^(\\.{1,2}/.*)\\.js$': '$1',
+  },
+  transform: {
+    '^.+\\.[jt]sx?$': [
+      'babel-jest',
+      {
+        babelrc: false,
+        configFile: false,
+        presets: [
+          ['@babel/preset-env', { targets: { node: 'current' } }],
+          '@babel/preset-typescript',
+          [
+            '@babel/preset-react',
+            { pragma: 'React.createElement', pragmaFrag: 'React.Fragment' },
+          ],
+        ],
+      },
+    ],
+  },
+};</code></pre>
+      <p>Tres decisiones merecen desglose:</p>
+      <ol class="steps">
+        <li><strong><code>testEnvironment: 'jsdom'</code></strong>. Los tests corren en Node, pero jsdom provee un <code>document</code> y <code>window</code> completos. El motor puede llamar <code>document.createElement</code>, <code>appendChild</code>, <code>insertBefore</code> y leer <code>innerHTML</code>/<code>textContent</code> como si estuviera en un navegador, sin mocks del DOM.</li>
+        <li><strong>Transform con <code>babel-jest</code> a CommonJS</strong>. Se fija <code>babelrc: false</code> y <code>configFile: false</code> para <em>ignorar</em> el <code>.babelrc</code> del build (que usa <code>modules:false</code>). En su lugar, <code>@babel/preset-env</code> con <code>targets: { node: 'current' }</code> transpila a CommonJS, que es lo que Jest sabe cargar. <code>@babel/preset-typescript</code> borra los tipos y <code>@babel/preset-react</code> queda disponible por si se usa JSX (con el mismo pragma <code>React.createElement</code>).</li>
+        <li><strong><code>moduleNameMapper</code></strong>. Este es el puente entre los dos mundos. En el código fuente, todos los imports terminan en <code>.js</code> (obligatorio para ES modules nativos: <code>import ... from './types.js'</code>). Pero en disco los archivos son <code>.ts</code>. La regex <code>'^(\\.{1,2}/.*)\\.js$' → '$1'</code> quita la extensión <code>.js</code> de los imports relativos, dejando que el resolver de Jest encuentre el <code>.ts</code> correspondiente.</li>
+      </ol>
+      <div class="callout info"><span class="tag">Por qué dos configuraciones de Babel</span><p>El build para navegador conserva los ES modules (<code>modules:false</code>) porque el runtime nativo los entiende y se sirven directamente. Jest, en cambio, necesita CommonJS. Aislar la config de tests con <code>babelrc: false</code> evita que una cambie a la otra: cada pipeline transpila para su propio destino.</p></div>
+
+      <h2>El helper de montaje</h2>
+      <p>Para no depender del pragma JSX, los tests usan <code>createElement</code> directamente bajo el alias <code>h</code>. Un helper <code>mount()</code> crea un contenedor, lo agrega al <code>document.body</code>, monta un root y renderiza:</p>
+      <div class="filename">src/react/__tests__/engine.test.ts</div>
+      <pre><code>const h = createElement as (
+  type: unknown,
+  props?: Record&lt;string, unknown&gt; | null,
+  ...children: unknown[]
+) =&gt; ReactElement;
+
+function mount(el: ReactElement): { container: HTMLElement; root: ReactRoot } {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  root.render(el);
+  return { container, root };
+}
+
+afterEach(() =&gt; {
+  document.body.innerHTML = '';
+});</code></pre>
+      <p>El <code>afterEach</code> limpia el body entre tests para que los múltiples roots no se pisen. Como cada root es independiente (encapsula su propio <code>RootStateContainer</code>), montar varios en el mismo test también es válido.</p>
+
+      <h2>Determinismo con <code>flushSync</code></h2>
+      <p>El scheduler agrupa las actualizaciones en un microtask (batching), lo que en producción es deseable pero en un test introduce asincronía: tras un <code>setN(1)</code>, el DOM todavía no cambió. Para verificar sincrónicamente, cada acción que dispara un re-render se envuelve en <code>flushSync</code>, que drena todo el trabajo pendiente antes de devolver el control:</p>
+      <div class="filename">src/react/__tests__/engine.test.ts</div>
+      <pre><code>const btn = container.firstChild as HTMLButtonElement;
+expect(btn.textContent).toBe('n=0');
+flushSync(() =&gt; btn.click());   // procesa el setState del onClick al instante
+expect(btn.textContent).toBe('n=1');</code></pre>
+      <p>Así los <code>expect</code> se leen justo después del cambio, sin <code>await</code> ni timers falsos. Es el mismo <code>flushSync</code> del <a href="26-batching-flushsync.html">capítulo de batching</a>, reutilizado como herramienta de test.</p>
+
+      <h2>Áreas cubiertas</h2>
+      <p>La batería (agrupada en bloques <code>describe</code>) recorre el motor de punta a punta:</p>
+      <table>
+        <thead>
+          <tr><th>Área</th><th>Qué verifica</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Render básico</td><td>Host + texto, ignora <code>null</code>/<code>undefined</code>/booleanos, <code>className</code>/atributos, estilo objeto que limpia sub-claves.</td></tr>
+          <tr><td>useState + batching</td><td>Actualiza en un click; dos <code>setState</code> en un tick producen un solo re-render.</td></tr>
+          <tr><td>Bailout / memo</td><td>Un <code>setState</code> no re-renderiza al hermano sin cambios; <code>memo</code> salta con props iguales.</td></tr>
+          <tr><td>useEffect + cleanup</td><td>Corre tras el commit, limpia al cambiar deps y al desmontar; <code>deps []</code> corre una sola vez.</td></tr>
+          <tr><td>useRef / useMemo / useCallback</td><td>Ref conserva identidad; memo recalcula solo con deps distintas; callback estable con deps iguales.</td></tr>
+          <tr><td>useReducer</td><td>Despacha acciones y actualiza el estado.</td></tr>
+          <tr><td>useContext</td><td>Lee el valor del Provider y re-renderiza al cambiarlo.</td></tr>
+          <tr><td>Reconciliación por key</td><td>Reordenar preserva nodos del DOM y su estado; elimina items que salen de la lista.</td></tr>
+          <tr><td>Error boundaries</td><td>Captura un error de render y muestra el fallback.</td></tr>
+          <tr><td>Múltiples roots</td><td>Dos roots son independientes: un <code>setState</code> en uno no afecta al otro.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Dos tests representativos</h2>
+      <h3>Batching: dos <code>setState</code>, un render</h3>
+      <p>Este test cuenta cuántas veces se ejecuta el cuerpo del componente. Tras dos <code>setState</code> en el mismo <code>flushSync</code>, el conteo sube de 1 a 2 (no a 3): las dos actualizaciones se coalescen en un único re-render.</p>
+      <div class="filename">src/react/__tests__/engine.test.ts</div>
+      <pre><code>test('batching: dos setState en un tick = un solo re-render', () =&gt; {
+  let renders = 0;
+  let setA!: Dispatch&lt;SetStateAction&lt;number&gt;&gt;;
+  let setB!: Dispatch&lt;SetStateAction&lt;number&gt;&gt;;
+  function App() {
+    renders++;
+    const [a, sa] = useState(0);
+    const [b, sb] = useState(0);
+    setA = sa;
+    setB = sb;
+    return h('div', null, `${a}-${b}`);
+  }
+  const { container } = mount(h(App));
+  expect(renders).toBe(1);
+  flushSync(() =&gt; {
+    setA(1);
+    setB(2);
+  });
+  expect(container.textContent).toBe('1-2');
+  expect(renders).toBe(2); // no 3
+});</code></pre>
+
+      <h3>Reordenar por key preserva nodo y estado</h3>
+      <p>El test más exigente de reconciliación: cada <code>Item</code> tiene su propio estado (<code>useState</code>). Se incrementa el contador de <code>"a"</code>, se reordena la lista a <code>[c, a, b]</code> y se verifica que el nodo del DOM de <code>"a"</code> sigue siendo <em>el mismo objeto</em> (<code>toBe</code>, identidad referencial) y conserva su estado <code>a:1</code>.</p>
+      <div class="filename">src/react/__tests__/engine.test.ts</div>
+      <pre><code>test('reordenar preserva nodos del DOM y el estado', () =&gt; {
+  let setOrder!: Dispatch&lt;SetStateAction&lt;string[]&gt;&gt;;
+  function Item({ id }: { id: string }) {
+    const [n, setN] = useState(0);
+    return h(
+      'li',
+      { 'data-id': id, onClick: () =&gt; setN((c) =&gt; c + 1) },
+      `${id}:${n}`,
+    );
+  }
+  function List() {
+    const [order, s] = useState(['a', 'b', 'c']);
+    setOrder = s;
+    return h('ul', null, ...order.map((id) =&gt; h(Item, { key: id, id })));
+  }
+  const { container } = mount(h(List));
+  const ul = container.firstChild as HTMLElement;
+  const nodeA = ul.querySelector('[data-id="a"]') as HTMLElement;
+
+  flushSync(() =&gt; nodeA.click());
+  expect(nodeA.textContent).toBe('a:1');
+
+  flushSync(() =&gt; setOrder(['c', 'a', 'b']));
+  const children = Array.from(ul.children) as HTMLElement[];
+  expect(children.map((c) =&gt; c.getAttribute('data-id'))).toEqual(['c', 'a', 'b']);
+  // El nodo "a" es el MISMO objeto y conserva su estado.
+  expect(ul.querySelector('[data-id="a"]')).toBe(nodeA);
+  expect(nodeA.textContent).toBe('a:1');
+});</code></pre>
+      <p>Que <code>nodeA</code> sobreviva un reordenamiento es la prueba de que el diffing por <code>key</code> reutiliza fibers en vez de recrearlos, tal como se explica en el <a href="23-reconciliacion-por-key.html">capítulo de reconciliación por key</a>.</p>
+
+      <h2>Cómo correr los tests</h2>
+      <p>El <code>package.json</code> expone los scripts habituales. Basta con:</p>
+      <div class="filename">terminal</div>
+      <pre><code>npm test          # jest, una pasada
+npm run test:watch  # jest --watch, re-ejecuta al guardar</code></pre>
+
+      <div class="callout ok"><span class="tag">Estado actual</span><p>La suite completa está en verde: <strong>19/19 tests</strong> pasando. Cubre render, batching, bailout/memo, los siete hooks, reconciliación por key, error boundaries y múltiples roots independientes. Cada cambio en el motor se valida contra esta red de seguridad antes de darse por bueno.</p></div>
+
+      <div class="pager">
+        <a href="28-fragment-y-error-boundaries.html"><div class="dir">← Anterior</div><div class="lbl">Fragment y Error Boundaries</div></a>
+        <a class="next" href="30-hook-usestate.html"><div class="dir">Siguiente →</div><div class="lbl">useState — ciclo de vida</div></a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

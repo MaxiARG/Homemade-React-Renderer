@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Doble buffer (alternate) · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a class="active" href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Dos árboles, dos buffers</p>
+      <h1>Doble buffer (alternate)</h1>
+      <p class="lead">
+        Cada render construye un árbol nuevo, pero no crea objetos <em>fiber</em> desde cero: reusa el
+        árbol del render anterior alternando entre dos buffers enlazados por el puntero
+        <code>alternate</code>. Es la misma técnica que React llama <em>double buffering</em>.
+      </p>
+
+      <h2>El puntero <code>alternate</code></h2>
+      <p>
+        Existen en todo momento (como máximo) dos versiones de cada fiber: la que está montada en el
+        DOM (<code>current</code>) y la que se está calculando (<code>work-in-progress</code>, o
+        <em>wip</em>). Ambas se apuntan mutuamente mediante <code>alternate</code>. Al terminar el
+        commit, los roles se invierten: el wip pasa a ser el current, y el viejo current queda libre
+        para servir de wip en el siguiente render. Nunca se acumulan más de dos generaciones, así que
+        la presión sobre el recolector de basura es mínima.
+      </p>
+
+      <h2><code>createWorkInProgress</code> en detalle</h2>
+      <p>
+        La función que materializa el patrón vive en <code>src/react/reconciler.ts</code>. Recibe el
+        fiber <code>current</code> y las props nuevas, y devuelve un wip listo para procesar:
+      </p>
+
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>export function createWorkInProgress(current: Fiber, pendingProps: Props): Fiber {
+  let wip = current.alternate;
+  if (wip === null) {
+    wip = newFiber(current.type, pendingProps, current.key);
+    wip.alternate = current;
+    current.alternate = wip;
+  } else {
+    wip.props = pendingProps;
+    wip.type = current.type;
+    wip.key = current.key;
+  }
+  // Se hereda lo que persiste entre renders.
+  wip.dom = current.dom;
+  wip.stateNode = current.stateNode;
+  wip.hooks = current.hooks; // el bailout preserva estado; el re-render los resetea.
+  wip.root = current.root;
+  // Combinamos la marca de "sucio" de ambos buffers: un dispatch pudo marcar el
+  // fiber que ahora es el `alternate` (wip) mientras el `current` quedó limpio.
+  wip.hasPendingUpdate = current.hasPendingUpdate || wip.hasPendingUpdate;
+  // Se resetea lo específico de este render.
+  wip.child = null;
+  wip.sibling = null;
+  wip.parent = null;
+  wip.effectTag = 'NONE';
+  wip.moved = false;
+  wip.index = 0;
+  wip.providerContext = null;
+  wip.providerForced = false;
+  return wip;
+}</code></pre>
+
+      <h2>Dos caminos: crear o reciclar</h2>
+      <ol class="steps">
+        <li>
+          <strong>Primer render de ese fiber (<code>current.alternate === null</code>).</strong> No hay
+          buffer que reciclar, así que se crea uno con <code>newFiber</code> y se enlazan mutuamente:
+          <code>wip.alternate = current</code> y <code>current.alternate = wip</code>. A partir de acá
+          el par queda establecido para siempre.
+        </li>
+        <li>
+          <strong>Renders siguientes.</strong> El <code>alternate</code> ya existe: es el árbol de hace
+          dos generaciones, que quedó ocioso tras el último commit. Se lo <em>recicla</em> escribiéndole
+          las props, el type y la key nuevos, sin asignar un objeto nuevo.
+        </li>
+      </ol>
+
+      <h2>Qué se hereda y qué se resetea</h2>
+      <p>
+        La distinción es la clave del patrón. Algunos campos describen <em>identidad persistente</em>
+        (el nodo del DOM, la instancia de clase, los hooks) y deben viajar entre renders; otros
+        describen la <em>estructura de este render en particular</em> (hijos, hermanos, banderas) y
+        deben partir limpios para no arrastrar basura del render anterior.
+      </p>
+
+      <table>
+        <thead>
+          <tr><th>Campo</th><th>Trato</th><th>Por qué</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>dom</code></td><td>Hereda</td><td>El nodo real del DOM ya existe; reusarlo es lo que evita recrear elementos.</td></tr>
+          <tr><td><code>stateNode</code></td><td>Hereda</td><td>La instancia de un componente de clase debe sobrevivir entre renders.</td></tr>
+          <tr><td><code>hooks</code></td><td>Hereda</td><td>El estado de <code>useState</code>/<code>useRef</code>/etc. vive acá; se comparte con el current y se resetea recién al re-ejecutar el componente.</td></tr>
+          <tr><td><code>root</code></td><td>Hereda</td><td>El contenedor de estado del root es el mismo durante toda la vida del árbol.</td></tr>
+          <tr><td><code>child</code>, <code>sibling</code>, <code>parent</code></td><td>Resetea</td><td>La forma del árbol se recalcula en <code>reconcileChildren</code> de este render.</td></tr>
+          <tr><td><code>effectTag</code></td><td>Resetea a <code>NONE</code></td><td>La bandera de mutación pertenece a un solo commit.</td></tr>
+          <tr><td><code>moved</code>, <code>index</code></td><td>Resetea</td><td>La posición y el movimiento los redecide la reconciliación por key.</td></tr>
+          <tr><td><code>providerContext</code>, <code>providerForced</code></td><td>Resetea</td><td>El manejo de la pila de contextos es propio de cada pasada.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>La línea sutil: <code>hasPendingUpdate</code></h2>
+      <p>
+        De todos los campos, el más delicado es <code>hasPendingUpdate</code>. No se hereda a secas ni
+        se resetea: se <em>combina</em> con un OR lógico.
+      </p>
+
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>wip.hasPendingUpdate = current.hasPendingUpdate || wip.hasPendingUpdate;</code></pre>
+
+      <p>
+        La razón es el desfase entre buffers. Cuando un <code>dispatch</code> de <code>useState</code>
+        marca un fiber como "sucio" (con actualización pendiente), marca la versión que estaba montada
+        en ese instante. Pero para el <em>próximo</em> render, esa versión puede ser justamente la que
+        ahora recibimos como <code>alternate</code> (el wip), no el <code>current</code>. Si
+        simplemente reseteáramos <code>wip.hasPendingUpdate</code> a <code>false</code>, perderíamos la
+        señal de que ese componente tiene un setState pendiente y <code>canBailout</code> lo saltaría
+        por error. Al combinar ambas marcas con OR, la actualización pendiente sobrevive sin importar en
+        qué buffer se registró. Este flag es el que <a href="25-bailout-y-memo.html">25 · Bailout y
+        memoización</a> consulta para decidir si un fiber puede saltarse.
+      </p>
+
+      <div class="callout bug">
+        <span class="tag">Por qué importa</span>
+        <p>
+          Sin ese OR, un patrón como "click rápido, dos setState en renders consecutivos" podría
+          intercalar buffers de modo que la segunda actualización se pierda silenciosamente. El OR
+          garantiza que el estado "sucio" sea una propiedad del componente lógico, no del objeto fiber
+          físico que casualmente lo represente en esta pasada.
+        </p>
+      </div>
+
+      <h2>Clonar sin re-ejecutar: <code>cloneChildFibers</code></h2>
+      <p>
+        El doble buffer también habilita el bailout. Cuando un fiber no necesita re-ejecutarse, sus
+        hijos igual deben existir en el árbol wip para que el recorrido continúe. En vez de reconciliar,
+        se <em>clonan</em> a partir del árbol current llamando a <code>createWorkInProgress</code> con
+        las <em>mismas</em> props (por eso se preservan tal cual):
+      </p>
+
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>function cloneChildFibers(current: Fiber, wip: Fiber): void {
+  let currentChild = current.child;
+  let prev: Fiber | null = null;
+  while (currentChild) {
+    const clone = createWorkInProgress(currentChild, currentChild.props);
+    clone.parent = wip;
+    clone.index = currentChild.index;
+    if (prev === null) wip.child = clone;
+    else prev.sibling = clone;
+    prev = clone;
+    currentChild = currentChild.sibling;
+  }
+}</code></pre>
+
+      <p>
+        Cada clon reusa el <code>alternate</code> de su hijo current, hereda su DOM, hooks y estado, y
+        se reengancha bajo el nuevo <code>wip</code>. Como las props son idénticas por referencia, el
+        clon a su vez podrá volver a hacer bailout hacia abajo, propagando el ahorro por todo el
+        subárbol sin ejecutar ningún componente.
+      </p>
+
+      <h2>El ciclo current ⇄ alternate</h2>
+      <div class="diagram">                render N                    commit N
+   current ───alternate──▶ wip        wip pasa a ser current
+   (montado)             (en cálculo)  (el viejo current queda libre)
+
+        A ◀───────────────▶ A'          A' ◀───────────────▶ A
+     current              wip          current              (alternate ocioso)
+
+
+   render N+1:  se recicla el alternate ocioso como nuevo wip
+        A ───alternate──▶ A'   (mismos dos objetos, roles invertidos otra vez)
+
+   Nunca se asignan objetos fiber nuevos salvo en el PRIMER render de cada nodo.</div>
+
+      <div class="callout info">
+        <span class="tag">Comparación con React</span>
+        <p>
+          React implementa exactamente esta técnica: dos árboles (<code>current</code> y
+          <code>workInProgress</code>) enlazados por <code>alternate</code>, y un intercambio de raíz al
+          final del commit (<code>root.current = finishedWork</code>). Nuestro motor hace lo propio en
+          <code>commitRoot</code> con <code>root.currentRoot = root.wipRoot</code>. La motivación es
+          idéntica: renders repetidos no deben inundar el GC con objetos efímeros.
+        </p>
+      </div>
+
+      <div class="pager">
+        <a href="23-reconciliacion-por-key.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Reconciliación por key</div>
+        </a>
+        <a class="next" href="25-bailout-y-memo.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Bailout y memoización</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>useEffect — ciclo de vida completo · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a class="active" href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Efectos secundarios</p>
+      <h1>useEffect — ciclo de vida completo</h1>
+      <p class="lead">
+        <code>useEffect</code> ejecuta efectos secundarios <strong>después</strong> de que el DOM
+        quedó mutado. El hook se <em>registra</em> durante el render, se <em>recolecta</em> si sus
+        deps cambiaron, y se <em>ejecuta</em> al final del commit, con un cleanup que corre antes de
+        re-ejecutar y también al desmontar el componente.
+      </p>
+
+      <h2>Firma y para qué sirve</h2>
+      <p>
+        La firma real en <code>src/react/hooks.ts</code> es
+        <code>useEffect(effect: () =&gt; void | (() =&gt; void), deps?: unknown[]): void</code>. El
+        <code>effect</code> puede devolver una función de limpieza (<em>cleanup</em>). Sirve para
+        sincronizar el componente con el mundo externo: suscripciones, timers, logging, acceso
+        imperativo al DOM ya montado.
+      </p>
+      <div class="filename">uso mínimo</div>
+      <pre><code>function Reloj() {
+  const [t, setT] = useState(0);
+  useEffect(() =&gt; {
+    const id = setInterval(() =&gt; setT((x) =&gt; x + 1), 1000);
+    return () =&gt; clearInterval(id); // cleanup: corre al desmontar / re-ejecutar
+  }, []); // deps [] -&gt; se suscribe una sola vez
+  return h('span', null, String(t));
+}</code></pre>
+
+      <h2>Dónde vive el estado</h2>
+      <p>
+        El estado del hook es un <code>EffectHook</code>, con cuatro campos además del
+        <code>tag</code>:
+      </p>
+      <div class="filename">src/react/types.ts</div>
+      <pre><code>export interface EffectHook {
+  tag: 'effect';
+  effect: () =&gt; void | (() =&gt; void);   // la función a ejecutar
+  deps: unknown[] | undefined;         // dependencias de esta ejecución
+  cleanup: (() =&gt; void) | undefined;   // función devuelta por el effect anterior
+  hasChanged: boolean;                 // ¿cambiaron las deps respecto al render previo?
+}</code></pre>
+      <p>
+        El campo crítico que <strong>persiste</strong> entre renders es <code>cleanup</code>: se lee
+        del hook viejo (<code>wipFiber.alternate.hooks[hookIndex]</code>) y se arrastra al hook
+        nuevo, de modo que la limpieza de la ejecución anterior siga disponible aunque el objeto
+        <code>EffectHook</code> se reconstruya en cada render.
+      </p>
+
+      <h2>Primer render (mount): registrar el efecto</h2>
+      <p>
+        A diferencia de <code>useMemo</code>, <code>useEffect</code> <strong>no ejecuta nada</strong>
+        durante el render: solo construye el hook y calcula si debe correr. En el mount,
+        <code>oldEffect</code> es <code>undefined</code>, así que <code>hasChanged</code> es
+        <code>true</code>:
+      </p>
+      <div class="filename">src/react/hooks.ts</div>
+      <pre><code>export function useEffect(
+  effect: () =&gt; void | (() =&gt; void),
+  deps?: unknown[],
+): void {
+  const { fiber, old } = slot();
+  const oldEffect = old as EffectHook | undefined;
+
+  const hasChanged = oldEffect ? !deps || !depsEqual(deps, oldEffect.deps) : true;
+
+  const hook: EffectHook = {
+    tag: 'effect',
+    effect,
+    deps,
+    hasChanged,
+    cleanup: oldEffect?.cleanup, // se conserva el cleanup previo
+  };
+  commitHook(fiber, hook);
+}</code></pre>
+      <ol class="steps">
+        <li><code>slot()</code> lee <code>R.wipFiber</code> y el hook viejo en <code>R.hookIndex</code>.</li>
+        <li>Se calcula <code>hasChanged</code> (en el mount, <code>true</code> porque no hay <code>oldEffect</code>).</li>
+        <li>Se crea el <code>EffectHook</code>, arrastrando <code>oldEffect?.cleanup</code>.</li>
+        <li><code>commitHook</code> lo empuja a <code>fiber.hooks</code> e incrementa <code>R.hookIndex</code>. Nótese que <code>useEffect</code> no devuelve valor.</li>
+      </ol>
+
+      <h2>Renders siguientes (update): el cálculo de hasChanged</h2>
+      <p>
+        En re-renders, <code>hasChanged</code> decide si el efecto vuelve a correr. La lógica
+        <code>oldEffect ? !deps || !depsEqual(deps, oldEffect.deps) : true</code> distingue tres
+        semánticas de dependencias:
+      </p>
+      <table>
+        <thead><tr><th><code>deps</code></th><th>Comportamiento</th><th>Por qué</th></tr></thead>
+        <tbody>
+          <tr><td>omitido (<code>undefined</code>)</td><td>Corre en <strong>cada</strong> render</td><td><code>!deps</code> es <code>true</code>, así que <code>hasChanged</code> siempre es <code>true</code>.</td></tr>
+          <tr><td><code>[]</code></td><td>Corre <strong>una sola vez</strong> (mount)</td><td>En updates hay <code>oldEffect</code> y <code>depsEqual([], [])</code> da <code>true</code>, entonces <code>hasChanged</code> es <code>false</code>.</td></tr>
+          <tr><td><code>[x]</code></td><td>Corre cuando <code>x</code> cambia</td><td><code>depsEqual</code> compara con <code>Object.is</code>; si difiere, <code>hasChanged</code> es <code>true</code>.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>La recolección: collectPassiveEffects</h2>
+      <p>
+        Tras ejecutar el cuerpo del componente, <code>updateFunctionComponent</code> llama a
+        <code>collectPassiveEffects(fiber)</code>. Este recorre los hooks del fiber y, por cada
+        <code>EffectHook</code> con <code>hasChanged</code>, empuja una <em>tarea</em> a
+        <code>root.pendingEffects</code>:
+      </p>
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>function collectPassiveEffects(fiber: Fiber): void {
+  if (!fiber.hooks) return;
+  const root = fiber.root;
+  if (!root) return;
+  for (const hook of fiber.hooks) {
+    if (hook.tag === 'effect' &amp;&amp; hook.hasChanged) {
+      const eff = hook as EffectHook;
+      root.pendingEffects.push(() =&gt; {
+        if (typeof eff.cleanup === 'function') eff.cleanup(); // limpia lo anterior
+        const cleanup = eff.effect();                          // ejecuta el efecto
+        eff.cleanup = typeof cleanup === 'function' ? cleanup : undefined;
+      });
+    }
+  }
+}</code></pre>
+      <p>
+        Importante: la tarea encapsula el patrón <strong>cleanup-antes-de-efecto</strong>. Cuando
+        finalmente corra, primero limpia la ejecución previa y después ejecuta el efecto nuevo,
+        guardando el cleanup que devuelva para la próxima vez.
+      </p>
+
+      <h2>La ejecución: commitRoot, después de mutar el DOM</h2>
+      <p>
+        Las tareas recolectadas se disparan al final de <code>commitRoot</code>, una vez que las
+        eliminaciones y mutaciones del DOM ya se aplicaron:
+      </p>
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>export function commitRoot(root: RootStateContainer): void {
+  root.deletions.forEach((f) =&gt; commitDeletion(f)); // aquí corren los cleanups de desmontaje
+  root.deletions = [];
+
+  if (root.wipRoot) commitWork(root.wipRoot.child); // muta el DOM (PLACEMENT / UPDATE)
+
+  root.currentRoot = root.wipRoot;
+  root.wipRoot = null;
+
+  // Efectos pasivos (useEffect) DESPUÉS de mutar el DOM.
+  const effects = root.pendingEffects;
+  root.pendingEffects = [];
+  effects.forEach((run) =&gt; run());
+}</code></pre>
+      <div class="callout info">
+        <span class="tag">Por qué después del DOM</span>
+        <p>
+          Los efectos corren al final a propósito: cuando el <code>effect</code> se ejecuta, el DOM
+          ya refleja el render actual. Así un efecto puede medir un nodo, enfocarlo o suscribirse con
+          la garantía de que la UI que ve el usuario ya está en su lugar. Es la contraparte de
+          <code>useMemo</code>, que corre <em>en</em> el render.
+        </p>
+      </div>
+
+      <h2>El cleanup: en re-ejecución y en desmontaje</h2>
+      <p>
+        Hay dos caminos por los que corre un cleanup:
+      </p>
+      <ul>
+        <li><strong>Re-ejecución</strong> (cambio de deps): lo dispara la propia tarea de
+          <code>collectPassiveEffects</code> (<code>if (typeof eff.cleanup === 'function') eff.cleanup()</code>)
+          justo antes de correr el efecto nuevo.</li>
+        <li><strong>Desmontaje</strong>: cuando un fiber se elimina, <code>commitDeletion</code> llama a
+          <code>runCleanups</code> <em>antes</em> de sacar los nodos del DOM.</li>
+      </ul>
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>function commitDeletion(fiber: Fiber): void {
+  runCleanups(fiber);                 // primero limpiar efectos
+  const parentDom = getHostParentDom(fiber);
+  removeHostNodes(fiber, parentDom);  // después remover del DOM
+}
+
+function runCleanups(fiber: Fiber): void {
+  if (fiber.hooks) {
+    for (const hook of fiber.hooks) {
+      if (hook.tag === 'effect' &amp;&amp; typeof hook.cleanup === 'function') {
+        hook.cleanup();
+      }
+    }
+  }
+  let child = fiber.child;
+  while (child) { runCleanups(child); child = child.sibling; } // recursivo en el subárbol
+}</code></pre>
+
+      <h2>Orden de ejecución y reglas de los hooks</h2>
+      <p>
+        El orden global es: <strong>render</strong> (el componente llama a <code>useEffect</code>,
+        que solo registra y calcula <code>hasChanged</code>; luego
+        <code>collectPassiveEffects</code> encola) → <strong>commit</strong> (se mutan/eliminan
+        nodos del DOM; los cleanups de desmontaje corren en <code>commitDeletion</code>) →
+        <strong>efectos</strong> (<code>pendingEffects</code> corre al final de
+        <code>commitRoot</code>: cleanup previo y luego efecto nuevo).
+      </p>
+      <p>
+        Como los efectos se identifican por posición en <code>fiber.hooks</code> (índice fijado por
+        <code>R.hookIndex</code> vía <code>commitHook</code>), <code>useEffect</code> no puede
+        llamarse condicionalmente: un salto desalinearía la correspondencia entre el hook viejo y el
+        nuevo, y <code>hasChanged</code> se calcularía contra las deps equivocadas.
+      </p>
+
+      <div class="callout ok">
+        <span class="tag">Test que lo fija</span>
+        <p>
+          El test <em>"corre tras el commit y limpia en cambio de deps y desmontaje"</em> usa un
+          <code>Child</code> con <code>useEffect(() =&gt; { log.push('effect '+n); return () =&gt; log.push('cleanup '+n); }, [n])</code>.
+          Tras el mount el log es <code>['effect 0']</code>; un <code>setN(1)</code> produce
+          <code>['effect 0', 'cleanup 0', 'effect 1']</code> (cleanup viejo antes del efecto nuevo);
+          y desmontar el <code>Child</code> agrega <code>'cleanup 1'</code>. El test hermano
+          <em>"deps [] corre una sola vez"</em> confirma que con <code>[]</code> el efecto corre
+          exactamente <code>1</code> vez pese a varios <code>setN</code>.
+        </p>
+      </div>
+
+      <h2>Diagrama de secuencia</h2>
+      <div class="diagram">
+  MOUNT (n=0)
+    render:  useEffect(fx, [0])  →  hasChanged = true (no hay oldEffect)
+             collectPassiveEffects → push a root.pendingEffects
+    commit:  DOM montado
+    efectos: fx()  →  log = ['effect 0'],  cleanup = () =&gt; log.push('cleanup 0')
+
+  UPDATE por setN(1)   (n=1)
+    render:  useEffect(fx, [1])  →  Object.is(0,1)=false  →  hasChanged = true
+             (cleanup 0 se arrastra al hook nuevo)
+             collectPassiveEffects → push a pendingEffects
+    commit:  DOM actualizado
+    efectos: cleanup()  →  'cleanup 0'   luego   fx()  →  'effect 1'
+
+  UNMOUNT (setShow(false))
+    commit:  commitDeletion(Child) → runCleanups → cleanup()  →  'cleanup 1'
+             removeHostNodes(Child)  (recién ahí se saca del DOM)
+
+  log final: ['effect 0', 'cleanup 0', 'effect 1', 'cleanup 1']
+      </div>
+
+      <div class="pager">
+        <a href="34-hook-usecallback.html"><div class="dir">← Anterior</div><div class="lbl">useCallback — ciclo de vida</div></a>
+        <a class="next" href="36-hook-usecontext.html"><div class="dir">Siguiente →</div><div class="lbl">useContext — ciclo de vida</div></a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

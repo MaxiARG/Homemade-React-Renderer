@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arquitectura general · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a class="active" href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Vista de pájaro</p>
+      <h1>Arquitectura general</h1>
+      <p class="lead">
+        Antes de bajar al detalle de cada función, conviene ver el mapa completo: qué módulos
+        existen, cómo fluyen los datos desde el JSX hasta el DOM, y qué estado global sostiene
+        todo el proceso.
+      </p>
+
+      <h2>Módulos del proyecto</h2>
+      <p>
+        La arquitectura es deliberadamente plana. Cinco piezas concentran toda la
+        responsabilidad:
+      </p>
+      <table>
+        <thead>
+          <tr><th>Módulo</th><th>Rol</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>src/React.ts</code></td>
+            <td>El motor completo: <code>createElement</code>, <em>scheduler</em>,
+            reconciliación, <em>commit</em> y <em>hooks</em>. Es la fuente de verdad.</td>
+          </tr>
+          <tr>
+            <td><code>src/types/index.ts</code></td>
+            <td>Tipos <code>Element</code>, <code>Props</code>, <code>FunctionComponent</code> y
+            <code>Fiber</code> que documentan la forma de los datos.</td>
+          </tr>
+          <tr>
+            <td><code>src/App.tsx</code></td>
+            <td>Punto de entrada: construye el árbol raíz en JSX y llama a
+            <code>React.render</code>.</td>
+          </tr>
+          <tr>
+            <td><code>src/Examples/</code></td>
+            <td>Componentes de demostración (<code>Counter</code>, <code>Box</code>,
+            <code>Label</code>, <code>StyledComponent</code>, etc.).</td>
+          </tr>
+          <tr>
+            <td><code>public/</code></td>
+            <td>Salida compilada por Babel que el navegador ejecuta directamente.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Flujo de datos</h2>
+      <p>
+        Escribir JSX en <code>src/App.tsx</code> desencadena una tubería que termina en nodos
+        reales del DOM. El pragma de Babel reescribe cada etiqueta como una llamada a
+        <code>React.createElement</code> (véase <a href="04-tooling-babel-typescript.html">04 ·
+        Tooling</a>), y a partir de ahí el motor toma el control:
+      </p>
+
+      <div class="diagram">JSX (src/App.tsx)
+   │  Babel + pragma "React.createElement"
+   ▼
+React.createElement(type, props, ...children)
+   │  flatten + filter + createTextElement
+   ▼
+Árbol de Elements  { type, props: { children } }
+   │  React.render(element, container)
+   ▼
+wipRoot  ──►  nextUnitOfWork = wipRoot
+   │
+   ▼
+workLoop(deadline)          ◄── requestIdleCallback
+   │  while (nextUnitOfWork &amp;&amp; !shouldYield)
+   ▼
+performUnitOfWork(fiber)
+   │  updateFunctionComponent / updateHostComponent
+   ▼
+reconcileChildren(wipFiber, elements)
+   │  asigna effectTag: PLACEMENT / UPDATE / DELETION
+   ▼
+(sin más unidades)  ──►  commitRoot()
+   │  commitWork(wipRoot.child) + deletions
+   ▼
+DOM real  ──►  currentRoot = wipRoot
+
+CICLO DE UPDATE (setState):
+   setState(action) ──► wipRoot = { ...currentRoot, alternate: currentRoot }
+                    ──► nextUnitOfWork = wipRoot  ──► (vuelve al workLoop)</div>
+
+      <p>
+        El detalle clave del ciclo de actualización es que <code>setState</code> no muta el DOM
+        directamente: encola la acción y reprograma un render partiendo de
+        <code>currentRoot</code> como <code>alternate</code>, de modo que la reconciliación
+        pueda comparar el árbol nuevo contra el ya comprometido.
+      </p>
+
+      <div class="filename">src/React.ts — el disparador del render</div>
+      <pre><code>export function render(element, container) {
+  wipRoot = {
+    dom: container,
+    props: { children: [element] },
+    alternate: currentRoot
+  }
+  deletions = [];
+  nextUnitOfWork = wipRoot // ejecuta nuevo render
+}</code></pre>
+
+      <h2>Las dos fases</h2>
+      <p>
+        Como en React real, el trabajo se divide en dos fases con propiedades opuestas. Esta
+        separación es la razón de ser de toda la arquitectura Fiber.
+      </p>
+
+      <ol class="steps">
+        <li>
+          <strong>Fase de render (pausable, no muta el DOM).</strong> Ocurre dentro de
+          <code>workLoop</code> y <code>performUnitOfWork</code>. Construye el árbol de fibers y
+          calcula qué cambios hacen falta, pero <em>no toca</em> el DOM. Puede interrumpirse
+          entre unidades de trabajo cuando <code>deadline.timeRemaining() &lt; 1</code>, cediendo
+          el control al navegador. Si se interrumpiera a mitad, no habría UI inconsistente
+          porque nada se ha aplicado todavía.
+        </li>
+        <li>
+          <strong>Fase de commit (no pausable, muta el DOM).</strong> Ocurre en
+          <code>commitRoot</code>. Una vez que <code>nextUnitOfWork</code> es nulo y existe un
+          <code>wipRoot</code>, se aplican todas las mutaciones de golpe, sin interrupción, para
+          garantizar que el usuario nunca vea un árbol a medio construir.
+        </li>
+      </ol>
+
+      <div class="callout ok">
+        <span class="tag">Idea clave</span>
+        <p>
+          La transición entre fases está en una sola condición del bucle:
+          <code>if (!nextUnitOfWork &amp;&amp; wipRoot) { commitRoot(); }</code>. Mientras haya
+          unidades de trabajo, seguimos en render; cuando se agotan, se hace un único
+          <em>commit</em> atómico. Detalle profundo en <a href="10-scheduler-workloop.html">10 ·
+          Scheduler y workLoop</a> y <a href="14-commit-phase.html">14 · Commit phase</a>.
+        </p>
+      </div>
+
+      <h2>Estado global mutable</h2>
+      <p>
+        El motor no encapsula su estado en una clase: usa variables de módulo mutables,
+        declaradas al principio de <code>src/React.ts</code>. Entender qué guarda cada una es
+        entender la máquina completa.
+      </p>
+
+      <table>
+        <thead>
+          <tr><th>Variable</th><th>Qué guarda</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>wipFiber</code></td>
+            <td>El fiber de componente que se está procesando ahora mismo; da contexto a
+            <code>useState</code>/<code>useEffect</code> para saber a quién pertenecen los hooks.</td>
+          </tr>
+          <tr>
+            <td><code>hookIndex</code></td>
+            <td>Índice del hook actual dentro del componente; se incrementa en cada llamada para
+            mantener la correspondencia entre hooks por posición.</td>
+          </tr>
+          <tr>
+            <td><code>nextUnitOfWork</code></td>
+            <td>El próximo fiber que <code>workLoop</code> debe procesar; ser nulo señala el fin
+            de la fase de render.</td>
+          </tr>
+          <tr>
+            <td><code>wipRoot</code></td>
+            <td>La raíz del árbol «en progreso» (work in progress) que se está construyendo pero
+            aún no se ha comprometido al DOM.</td>
+          </tr>
+          <tr>
+            <td><code>currentRoot</code></td>
+            <td>La raíz del último árbol ya comprometido; sirve de <code>alternate</code> para
+            comparar en la próxima reconciliación.</td>
+          </tr>
+          <tr>
+            <td><code>deletions</code></td>
+            <td>Array de fibers viejos marcados para eliminación; se recorre en
+            <code>commitRoot</code> porque el nuevo árbol no los contiene.</td>
+          </tr>
+          <tr>
+            <td><code>wipEffects</code></td>
+            <td>Lista global de efectos de <code>useEffect</code> pendientes; se vacía y ejecuta
+            al final de <code>commitRoot</code>, después de mutar el DOM.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout warn">
+        <span class="tag">Cuidado</span>
+        <p>
+          <code>wipEffects</code> es global y compartido entre todos los componentes montados,
+          no está asociado a cada fiber. Es una simplificación conocida respecto a React real,
+          donde cada componente mantiene su propia lista de efectos. Se detalla en
+          <a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a> y
+          <a href="19-diferencias-y-bugs.html">19 · Diferencias con React y bugs</a>.
+        </p>
+      </div>
+
+      <p>
+        Con este mapa en mente, los siguientes capítulos descienden módulo por módulo. El
+        próximo paso es entender cómo el TSX se convierte en el JavaScript que el navegador
+        ejecuta: el <a href="04-tooling-babel-typescript.html">tooling de Babel y
+        TypeScript</a>.
+      </p>
+
+      <div class="pager">
+        <a href="02-introduccion.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Introducción y objetivos</div>
+        </a>
+        <a class="next" href="04-tooling-babel-typescript.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Tooling: Babel + TypeScript</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

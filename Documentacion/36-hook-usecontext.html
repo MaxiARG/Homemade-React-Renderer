@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>useContext — ciclo de vida completo · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a class="active" href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Leer contexto</p>
+      <h1>useContext — ciclo de vida completo</h1>
+      <p class="lead">
+        <code>useContext</code> lee el valor que el <code>Provider</code> más cercano dejó activo
+        durante el recorrido del árbol. Es el hook más simple del motor: no guarda estado propio, no
+        se suscribe a nada; lee <code>context._currentValue</code> y confía en que el reconciliador
+        fuerce el re-render cuando el valor cambia.
+      </p>
+
+      <h2>Firma y para qué sirve</h2>
+      <p>
+        La firma real en <code>src/react/hooks.ts</code> es
+        <code>useContext&lt;T&gt;(context: ReactContext&lt;T&gt;): T</code>. Recibe el objeto de
+        contexto creado con <code>createContext</code> y devuelve su valor actual. Sirve para
+        consumir datos "ambientales" (tema, usuario, idioma) sin pasarlos manualmente por props a
+        través de cada nivel del árbol.
+      </p>
+      <div class="filename">uso mínimo</div>
+      <pre><code>const Theme = createContext('light');
+
+function Consumer() {
+  const theme = useContext(Theme); // lee el value del Provider más cercano
+  return h('span', null, theme);
+}
+
+function App() {
+  const [theme, setTheme] = useState('light');
+  return h(Theme.Provider, { value: theme }, h(Consumer));
+}</code></pre>
+
+      <h2>Dónde vive el estado</h2>
+      <p>
+        El estado del hook es un <code>ContextHook</code>. Nótese que <strong>no</strong> almacena
+        estado mutable ni una <code>queue</code>: es apenas un registro del contexto leído y del
+        valor obtenido en este render.
+      </p>
+      <div class="filename">src/react/types.ts</div>
+      <pre><code>export interface ContextHook&lt;T = unknown&gt; {
+  tag: 'context';
+  context: ReactContext&lt;T&gt;;
+  value: T;
+}</code></pre>
+      <p>
+        El valor "vivo" no vive en el hook sino en el propio objeto de contexto, en el campo
+        <code>_currentValue</code>:
+      </p>
+      <div class="filename">src/react/types.ts</div>
+      <pre><code>export interface ReactContext&lt;T&gt; {
+  _currentValue: T;   // el valor activo AHORA (lo setea el Provider durante el recorrido)
+  _defaultValue: T;   // el valor por defecto de createContext
+  Provider: FunctionComponent&lt;{ value: T; children?: ReactElement[] }&gt;;
+  _isContextProvider?: boolean;
+}</code></pre>
+      <p>
+        Aunque el <code>ContextHook</code> se reconstruye en cada render y se recupera por posición
+        desde <code>wipFiber.alternate.hooks[hookIndex]</code> como cualquier otro hook, su
+        <code>value</code> no se "recuerda": siempre refleja lo que <code>_currentValue</code> tenga
+        en el instante de la lectura.
+      </p>
+
+      <h2>Primer render (mount) y siguientes: una sola lectura</h2>
+      <p>
+        El cuerpo entero del hook es una lectura directa; no hay rama de mount vs. update porque no
+        depende del hook anterior:
+      </p>
+      <div class="filename">src/react/hooks.ts</div>
+      <pre><code>export function useContext&lt;T&gt;(context: ReactContext&lt;T&gt;): T {
+  const { fiber } = slot();
+  const value = context._currentValue;
+  const hook: ContextHook&lt;T&gt; = { tag: 'context', context, value };
+  commitHook(fiber, hook as unknown as Hook);
+  return value;
+}</code></pre>
+      <ol class="steps">
+        <li><code>slot()</code> obtiene <code>R.wipFiber</code> (no necesita el hook viejo).</li>
+        <li>Se lee <code>context._currentValue</code>: el valor que el <code>Provider</code> dejó activo.</li>
+        <li>Se crea el <code>ContextHook</code> como registro y <code>commitHook</code> avanza <code>R.hookIndex</code>.</li>
+        <li>Se devuelve <code>value</code>.</li>
+      </ol>
+
+      <h2>Quién setea _currentValue: el Provider durante el recorrido</h2>
+      <p>
+        La clave está en <code>updateContextProvider</code> (ver <a href="27-context-api.html">Context API</a>).
+        Al entrar a un <code>Provider</code>, el reconciliador empuja el valor previo a
+        <code>contextStack</code> y escribe el nuevo en <code>_currentValue</code>; al salir,
+        <code>completeWork</code> lo restaura. Como el recorrido es en profundidad, cualquier
+        <code>useContext</code> que se ejecute <em>dentro</em> del subárbol del Provider lee el valor
+        correcto:
+      </p>
+      <div class="filename">src/react/reconciler.ts (updateContextProvider)</div>
+      <pre><code>contextStack.push({ context, value: context._currentValue }); // guarda el anterior
+context._currentValue = value;                                 // activa el nuevo
+fiber.providerContext = context;
+
+if (fiber.alternate === null || !Object.is(prevValue, value)) {
+  R.forceRenderDepth++;         // el value cambió: deshabilita el bailout del subárbol
+  fiber.providerForced = true;
+}</code></pre>
+
+      <h2>La actualización / disparador: no hay suscripción explícita</h2>
+      <p>
+        <code>useContext</code> no se suscribe al contexto ni registra un listener. Entonces, ¿cómo
+        se entera un consumidor de que el value cambió? El <strong>disparador es el
+        <code>setState</code> del componente que renderiza el Provider</strong> con un
+        <code>value</code> distinto. Ese re-render vuelve a recorrer el subárbol, y cuando pasa por el
+        Provider detecta <code>!Object.is(prevValue, value)</code> e incrementa
+        <code>R.forceRenderDepth</code>. Mientras esa profundidad es <code>&gt; 0</code>, el bailout
+        queda deshabilitado:
+      </p>
+      <div class="filename">src/react/reconciler.ts (canBailout)</div>
+      <pre><code>function canBailout(fiber: Fiber): boolean {
+  const current = fiber.alternate;
+  if (current === null) return false;
+  if (fiber.hasPendingUpdate) return false;
+  if (R.forceRenderDepth &gt; 0) return false; // dentro de un Provider cuyo value cambió
+  return fiber.props === current.props;
+}</code></pre>
+      <div class="callout info">
+        <span class="tag">Por qué no hace falta suscripción</span>
+        <p>
+          En vez de mantener una lista de consumidores y notificarlos (lo que hace React real de
+          forma optimizada), este motor usa una estrategia más simple: cuando el value cambia,
+          <code>forceRenderDepth</code> obliga a re-renderizar <em>todo</em> el subárbol del
+          Provider. Como cada consumidor vuelve a ejecutarse, su <code>useContext</code> vuelve a
+          leer <code>_currentValue</code> y obtiene el valor nuevo. Es correcto, aunque menos
+          granular: incluso componentes que no consumen el contexto se re-renderizan.
+        </p>
+      </div>
+      <div class="callout warn">
+        <span class="tag">Diferencia con React real</span>
+        <p>
+          React real propaga los cambios de contexto <em>solo</em> a los suscriptores mediante un
+          mecanismo de "lanes" y listas de dependencias, permitiendo que ramas sin consumidores hagan
+          bailout. Acá el precio de la simplicidad es re-renderizar el subárbol completo del Provider
+          que cambió.
+        </p>
+      </div>
+
+      <h2>Orden de ejecución y reglas de los hooks</h2>
+      <p>
+        <code>useContext</code> corre <strong>en línea durante el render</strong> del consumidor, en
+        el momento de la llamada. Para que la lectura sea correcta, el Provider ya tuvo que haber
+        seteado <code>_currentValue</code> antes (garantizado por el orden del recorrido: el Provider
+        es ancestro del consumidor). Como consume un slot vía <code>commitHook</code> y avanza
+        <code>R.hookIndex</code>, debe llamarse incondicionalmente: llamarlo dentro de un
+        <code>if</code> correría el índice y rompería la correspondencia posicional con el resto de
+        los hooks del componente.
+      </p>
+
+      <div class="callout ok">
+        <span class="tag">Test que lo fija</span>
+        <p>
+          El test <em>"lee el valor del provider y re-renderiza al cambiar"</em> monta
+          <code>App</code> con <code>Theme.Provider value={theme}</code> y un <code>Consumer</code>
+          que hace <code>useContext(Theme)</code>. Tras el mount <code>container.textContent</code> es
+          <code>'light'</code>; un <code>setTheme('dark')</code> (setState en <code>App</code>, que
+          cambia el <code>value</code> del Provider) fuerza el re-render del subárbol y el
+          <code>Consumer</code> vuelve a leer <code>_currentValue</code>, dando <code>'dark'</code>.
+        </p>
+      </div>
+
+      <h2>Diagrama de secuencia</h2>
+      <div class="diagram">
+  MOUNT (theme = 'light')
+    App render → Theme.Provider value='light'
+      updateContextProvider: push viejo; _currentValue = 'light'
+    Consumer render → useContext(Theme)
+      value = _currentValue = 'light'   ──►  &lt;span&gt;light&lt;/span&gt;
+    completeWork(Provider): pop → restaura _currentValue
+
+  DISPARADOR: setTheme('dark')   (setState en App)
+    scheduleUpdate(App) → re-render del subárbol de App
+    App render → Theme.Provider value='dark'
+      prevValue='light', value='dark' → !Object.is → forceRenderDepth++
+      (canBailout = false mientras forceRenderDepth &gt; 0)
+    Consumer render (NO puede hacer bailout) → useContext(Theme)
+      value = _currentValue = 'dark'   ──►  &lt;span&gt;dark&lt;/span&gt;
+    completeWork(Provider): forceRenderDepth-- ; pop restaura _currentValue
+
+  (useContext nunca se suscribe: solo re-lee _currentValue en cada render forzado.)
+      </div>
+
+      <div class="pager">
+        <a href="35-hook-useeffect.html"><div class="dir">← Anterior</div><div class="lbl">useEffect — ciclo de vida</div></a>
+        <a class="next disabled" href="#"></a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

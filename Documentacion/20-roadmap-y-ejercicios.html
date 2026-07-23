@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Roadmap y ejercicios · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a class="active" href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Hacia dónde seguir</p>
+      <h1>Roadmap y ejercicios</h1>
+      <p class="lead">
+        Este motor es un punto de partida, no un destino. Cerramos la serie trazando las
+        siguientes capacidades a implementar, explicando cómo ejecutar el proyecto, y
+        proponiendo ejercicios que convierten la lectura pasiva en comprensión activa.
+      </p>
+
+      <div class="callout ok">
+        <span class="tag">Buena parte del roadmap ya está hecha</span>
+        <p>
+          La reescritura v2 implementó reconciliación por <code>key</code>, doble buffer,
+          bailout, <code>memo</code>, batching, Context, Fragment, Error Boundaries y los hooks
+          <code>useReducer</code>, <code>useRef</code>, <code>useMemo</code>,
+          <code>useCallback</code> y <code>useContext</code>. Todo se documenta en los capítulos
+          <a href="21-refactor-modulos-roots.html">21</a>–<a href="36-hook-usecontext.html">36</a>.
+          Lo que sigue son extensiones pendientes.
+        </p>
+      </div>
+
+      <h2>Roadmap</h2>
+      <p>
+        Las siguientes mejoras cierran las brechas señaladas en
+        <a href="19-diferencias-y-bugs.html">Diferencias con React y bugs</a>. Están
+        ordenadas de mayor a menor impacto sobre la fidelidad del motor.
+      </p>
+
+      <ol class="steps">
+        <li>
+          <strong>Reconciliación por <code>key</code>.</strong> Como indica el
+          <code>Readme.md</code>: construir un mapa de <em>old fibers</em> indexados por
+          su <code>key</code>, reconciliar primero por clave y solo caer a la comparación
+          por tipo y posición cuando no haya <code>key</code>. Esto permite detectar
+          reordenamientos de listas sin recrear nodos, y es la carencia más visible del
+          <code>reconcileChildren</code> actual.
+        </li>
+        <li>
+          <strong>Hooks de memoización: <code>useMemo</code>, <code>useCallback</code> y
+          <code>memo</code>.</strong> <code>useCallback</code> cachea la
+          <em>definición</em> de una función entre renders: en el render inicial devuelve
+          la función pasada, y en los siguientes devuelve la misma referencia mientras sus
+          dependencias no cambien (comparadas con <code>Object.is</code>). Es útil sobre
+          todo al pasar esa función como prop a un componente envuelto en
+          <code>memo</code>, para que <code>memo</code> pueda saltarse el re-render al ver
+          la misma referencia. <code>useMemo</code> haría lo análogo con valores
+          calculados. La infraestructura ya existe: el patrón de <code>oldHook</code> +
+          <code>deps</code> + <code>Object.is</code> de <code>useEffect</code> se reutiliza
+          casi tal cual.
+        </li>
+        <li>
+          <strong><code>React.Fragment</code>.</strong> Hoy aparece referenciado en la
+          declaración de tipos (<code>Window.React.Fragment?</code>) pero no está
+          implementado. Permitiría agrupar varios hijos sin introducir un nodo DOM
+          contenedor.
+        </li>
+        <li>
+          <strong>Batching de updates.</strong> Actualmente cada <code>setState</code>
+          reprograma un <code>wipRoot</code> completo. Agrupar varias actualizaciones
+          disparadas en el mismo tick evitaría renders redundantes.
+        </li>
+        <li>
+          <strong>Mover el estado global al fiber.</strong> Variables como
+          <code>wipEffects</code> (y en parte <code>hookIndex</code>) son globales. Llevar
+          los efectos a una lista <em>por fiber</em> —tal como los propios comentarios
+          <code>TODO</code> de <code>src/React.ts</code> sugieren— eliminaría el riesgo de
+          que efectos de distintos componentes se mezclen en una misma cola.
+        </li>
+      </ol>
+
+      <h2>Cómo ejecutar el proyecto</h2>
+      <p>
+        Los scripts reales están en <code>package.json</code>. El flujo es transpilar con
+        Babel y servir la carpeta de salida:
+      </p>
+
+      <div class="filename">terminal</div>
+      <pre><code># Transpila src/ (JSX/TSX) hacia public/
+npm run build
+
+# Equivale a: npm run build &amp;&amp; npx serve public
+npm start</code></pre>
+
+      <p>
+        Internamente, <code>build</code> ejecuta <code>babel src --out-dir public
+        --extensions ".js,.jsx,.ts,.tsx"</code>, y <code>start</code> encadena ese build
+        con <code>npx serve public</code>. Una vez servido, se abre
+        <code>index.html</code> en el navegador; ese archivo carga <code>./App.js</code>
+        (recuerda el Bug 4: la mayúscula importa). Con las herramientas de desarrollador
+        abiertas verás en consola la traza de <code>Counter</code> descrita en el
+        <a href="18-ciclo-de-vida-completo.html">Ciclo de vida completo</a>.
+      </p>
+
+      <div class="callout info">
+        <span class="tag">Nota</span>
+        <p>
+          No hay bundler ni servidor de desarrollo con recarga en caliente: cada cambio en
+          <code>src/</code> exige volver a ejecutar <code>npm run build</code>. Es una
+          fricción intencional que mantiene el <em>tooling</em> mínimo y transparente.
+        </p>
+      </div>
+
+      <h2>Ejercicios de comprensión</h2>
+      <p>
+        Estas cuatro preguntas provienen del documento
+        <code>Docs/Optimization Problems/Optimizations.md</code>. Respóndelas apoyándote
+        en lo que has leído sobre hooks y reconciliación:
+      </p>
+
+      <ol class="steps">
+        <li>
+          ¿Qué ocurre cuando actualizas un estado dentro de <code>useEffect</code>?
+          (Pista: piensa en cómo <code>setState</code> reprograma <code>wipRoot</code> y
+          qué pasa con <code>hasChanged</code> en el siguiente render.)
+        </li>
+        <li>¿Qué problemas evitas usando <code>useMemo</code>?</li>
+        <li>¿Qué problemas evitas usando <code>useCallback</code>?</li>
+        <li>¿Qué problemas evitas usando <code>memo</code>?</li>
+      </ol>
+
+      <p>Y estos retos de implementación llevan el motor un paso más allá:</p>
+
+      <ol class="steps">
+        <li>
+          <strong>Implementar <code>useRef</code>.</strong> Añade un hook que devuelva un
+          objeto <code>{ current }</code> estable entre renders, copiándolo desde el
+          <code>oldHook</code> igual que hace <code>useState</code> con su estado.
+        </li>
+        <li>
+          <strong>Reconciliación por <code>key</code>.</strong> Modifica
+          <code>reconcileChildren</code> para indexar los <em>old fibers</em> por
+          <code>key</code> y verifica, con una lista reordenada, que los nodos DOM se
+          reutilizan en lugar de recrearse.
+        </li>
+        <li>
+          <strong>Contador con reset.</strong> Extiende <code>Counter</code> con un
+          segundo botón que llame a <code>setCounter(() =&gt; 0)</code>. Observa en consola
+          la secuencia cleanup → efecto al resetear.
+        </li>
+        <li>
+          <strong>Efecto de montaje único.</strong> Agrega a un componente un
+          <code>useEffect(fn, [])</code> y confirma, con un <code>console.log</code>, que
+          su cuerpo solo corre una vez y su cleanup solo al desmontar el componente
+          (fuérzalo con un <code>{condicion &amp;&amp; &lt;Componente/&gt;}</code>, que ahora
+          funciona gracias al Bug 1 corregido).
+        </li>
+      </ol>
+
+      <div class="callout ok">
+        <span class="tag">Idea clave</span>
+        <p>
+          Si un ejercicio no funciona sin memoización, el objetivo no es añadir
+          <code>useCallback</code> a ciegas: es entender el problema de fondo primero. La
+          memoización es una optimización, no una corrección de lógica.
+        </p>
+      </div>
+
+      <h2>Lecturas recomendadas</h2>
+      <p>
+        Para profundizar, dos referencias son especialmente afines a este proyecto. La
+        serie <strong>"Build your own React"</strong> (conocida como <em>Didact</em>, de
+        Rodrigo Pombo) construye paso a paso un motor con la misma arquitectura de fibers,
+        <code>workLoop</code> y reconciliación que aquí estudiamos; buena parte de la
+        terminología del código proviene de ella. La <strong>documentación oficial de
+        React</strong> es la referencia canónica para el comportamiento esperado de
+        <code>useState</code>, <code>useEffect</code>, <code>useMemo</code>,
+        <code>useCallback</code> y <code>memo</code>: contrastar este clon con esa
+        especificación es la mejor forma de calibrar qué se ha simplificado.
+      </p>
+
+      <p>
+        Con esto cierra la serie. Has recorrido el motor desde el pragma de JSX hasta el
+        ciclo de vida completo, sus diferencias con React y su hoja de ruta. El siguiente
+        paso ya no es leer: es abrir <code>src/React.ts</code> y extenderlo.
+      </p>
+
+      <div class="pager">
+        <a href="19-diferencias-y-bugs.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Diferencias con React y bugs</div>
+        </a>
+        <a class="next" href="21-refactor-modulos-roots.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Refactor: módulos y roots</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

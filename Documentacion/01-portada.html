@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Homemade React Renderer · Documentación</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a class="active" href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Estudio académico del núcleo de React</p>
+      <h1>Homemade React Renderer</h1>
+      <p class="lead">
+        Una reimplementación mínima y didáctica del motor interno de React: JSX,
+        árbol de <em>fibers</em>, <em>scheduler</em> cooperativo, reconciliación,
+        <em>commit</em> al DOM y <em>hooks</em> (<code>useState</code>, <code>useEffect</code>).
+        Esta documentación disecciona cada pieza del proyecto, línea por línea.
+      </p>
+
+      <div class="callout info">
+        <span class="tag">¿Qué vas a encontrar?</span>
+        <p>
+          20 documentos que van desde la transpilación de JSX hasta el ciclo de vida
+          completo de un componente con estado. Cada capítulo enlaza el concepto de
+          React real con el código concreto de <code>src/React.ts</code>.
+        </p>
+      </div>
+
+      <h2>Mapa de la documentación</h2>
+      <div class="grid">
+        <a class="card" href="02-introduccion.html">
+          <div class="num">02</div>
+          <div class="title">Introducción y objetivos</div>
+          <p class="desc">Qué es el proyecto, su filosofía y qué preguntas responde.</p>
+        </a>
+        <a class="card" href="03-arquitectura.html">
+          <div class="num">03</div>
+          <div class="title">Arquitectura general</div>
+          <p class="desc">Visión de alto nivel y flujo de datos entre módulos.</p>
+        </a>
+        <a class="card" href="04-tooling-babel-typescript.html">
+          <div class="num">04</div>
+          <div class="title">Tooling: Babel + TypeScript</div>
+          <p class="desc">Cómo el TSX/JSX se convierte en llamadas a JavaScript.</p>
+        </a>
+        <a class="card" href="05-jsx-y-pragma.html">
+          <div class="num">05</div>
+          <div class="title">JSX y el pragma</div>
+          <p class="desc">El puente entre las etiquetas y <code>createElement</code>.</p>
+        </a>
+        <a class="card" href="06-createelement-y-flattening.html">
+          <div class="num">06</div>
+          <div class="title">createElement y flattening</div>
+          <p class="desc">Construcción de elementos y aplanado de listas.</p>
+        </a>
+        <a class="card" href="07-nodos-de-texto.html">
+          <div class="num">07</div>
+          <div class="title">Nodos de texto</div>
+          <p class="desc">El tipo especial <code>TEXT_ONLY</code>.</p>
+        </a>
+        <a class="card" href="08-estructura-fiber.html">
+          <div class="num">08</div>
+          <div class="title">La estructura Fiber</div>
+          <p class="desc">Unidad de trabajo: child, sibling, parent, alternate.</p>
+        </a>
+        <a class="card" href="09-recorrido-del-arbol.html">
+          <div class="num">09</div>
+          <div class="title">Recorrido del árbol</div>
+          <p class="desc">Cómo se encuentra la siguiente unidad de trabajo.</p>
+        </a>
+        <a class="card" href="10-scheduler-workloop.html">
+          <div class="num">10</div>
+          <div class="title">Scheduler y workLoop</div>
+          <p class="desc"><code>requestIdleCallback</code> y rendering interrumpible.</p>
+        </a>
+        <a class="card" href="11-render-phase.html">
+          <div class="num">11</div>
+          <div class="title">Render phase</div>
+          <p class="desc"><code>performUnitOfWork</code> y tipos de componente.</p>
+        </a>
+        <a class="card" href="12-reconciliacion.html">
+          <div class="num">12</div>
+          <div class="title">Reconciliación</div>
+          <p class="desc">El diffing entre el árbol viejo y el nuevo.</p>
+        </a>
+        <a class="card" href="13-effect-tags.html">
+          <div class="num">13</div>
+          <div class="title">Effect tags</div>
+          <p class="desc">PLACEMENT, UPDATE y DELETION.</p>
+        </a>
+        <a class="card" href="14-commit-phase.html">
+          <div class="num">14</div>
+          <div class="title">Commit phase</div>
+          <p class="desc">Aplicar los cambios calculados al DOM real.</p>
+        </a>
+        <a class="card" href="15-updatedom-props-eventos-estilos.html">
+          <div class="num">15</div>
+          <div class="title">updateDom</div>
+          <p class="desc">Props, event listeners y estilos inline.</p>
+        </a>
+        <a class="card" href="16-usestate.html">
+          <div class="num">16</div>
+          <div class="title">Hook useState</div>
+          <p class="desc">Estado, cola de acciones y re-render.</p>
+        </a>
+        <a class="card" href="17-useeffect-y-cleanup.html">
+          <div class="num">17</div>
+          <div class="title">Hook useEffect</div>
+          <p class="desc">Dependencias, timing y limpieza (cleanup).</p>
+        </a>
+        <a class="card" href="18-ciclo-de-vida-completo.html">
+          <div class="num">18</div>
+          <div class="title">Ciclo de vida completo</div>
+          <p class="desc">El ejemplo Counter de principio a fin.</p>
+        </a>
+        <a class="card" href="19-diferencias-y-bugs.html">
+          <div class="num">19</div>
+          <div class="title">Diferencias y bugs</div>
+          <p class="desc">Divergencias con React real y correcciones aplicadas.</p>
+        </a>
+        <a class="card" href="20-roadmap-y-ejercicios.html">
+          <div class="num">20</div>
+          <div class="title">Roadmap y ejercicios</div>
+          <p class="desc">Keys, memoización y retos para seguir aprendiendo.</p>
+        </a>
+      </div>
+
+      <div class="callout ok" style="margin-top:36px">
+        <span class="tag">Novedad · Motor v2</span>
+        <p>
+          El motor fue reescrito de un archivo monolítico a un núcleo modular, tipado
+          y con tests. Se sumaron <strong>reconciliación por key</strong>, <strong>doble
+          buffer</strong>, <strong>bailout/memo</strong>, <strong>batching</strong>,
+          <strong>Context</strong>, <strong>Fragment</strong>, <strong>Error Boundaries</strong>
+          y los hooks <code>useReducer</code>, <code>useRef</code>, <code>useMemo</code>,
+          <code>useCallback</code>, <code>useContext</code>. Los capítulos 21–29 lo explican.
+        </p>
+      </div>
+
+      <h2>Motor v2 · Arquitectura y features</h2>
+      <div class="grid">
+        <a class="card" href="21-refactor-modulos-roots.html"><div class="num">21</div><div class="title">Refactor: módulos y roots</div><p class="desc">De monolito a módulos con estado por-root y múltiples roots.</p></a>
+        <a class="card" href="22-tipado-completo.html"><div class="num">22</div><div class="title">Tipado completo</div><p class="desc">Adiós al <code>any</code>: tipos y uniones de hooks.</p></a>
+        <a class="card" href="23-reconciliacion-por-key.html"><div class="num">23</div><div class="title">Reconciliación por key</div><p class="desc">Diffing con keys y detección de movimientos.</p></a>
+        <a class="card" href="24-doble-buffer.html"><div class="num">24</div><div class="title">Doble buffer</div><p class="desc">Reutilizar fibers vía <code>alternate</code>.</p></a>
+        <a class="card" href="25-bailout-y-memo.html"><div class="num">25</div><div class="title">Bailout y memoización</div><p class="desc">Saltar re-renders innecesarios; <code>memo</code>.</p></a>
+        <a class="card" href="26-batching-flushsync.html"><div class="num">26</div><div class="title">Batching y flushSync</div><p class="desc">Agrupar updates con microtasks.</p></a>
+        <a class="card" href="27-context-api.html"><div class="num">27</div><div class="title">Context API</div><p class="desc">Provider, pila de contextos, <code>useContext</code>.</p></a>
+        <a class="card" href="28-fragment-y-error-boundaries.html"><div class="num">28</div><div class="title">Fragment y Error Boundaries</div><p class="desc">Agrupar sin nodo y capturar errores.</p></a>
+        <a class="card" href="29-testing-jest.html"><div class="num">29</div><div class="title">Testing con Jest</div><p class="desc">jsdom, <code>flushSync</code> y 19 tests en verde.</p></a>
+      </div>
+
+      <h2>Ciclo de vida de cada Hook</h2>
+      <p>Un capítulo por hook, de principio a fin: cómo se crean y actualizan sus variables, el orden de ejecución y las reglas de los hooks.</p>
+      <div class="grid">
+        <a class="card" href="30-hook-usestate.html"><div class="num">30</div><div class="title">useState</div><p class="desc">Estado, cola de acciones y dispatch.</p></a>
+        <a class="card" href="31-hook-usereducer.html"><div class="num">31</div><div class="title">useReducer</div><p class="desc">Reducer, cola y base de useState.</p></a>
+        <a class="card" href="32-hook-useref.html"><div class="num">32</div><div class="title">useRef</div><p class="desc">Caja mutable con identidad estable.</p></a>
+        <a class="card" href="33-hook-usememo.html"><div class="num">33</div><div class="title">useMemo</div><p class="desc">Valor cacheado por deps.</p></a>
+        <a class="card" href="34-hook-usecallback.html"><div class="num">34</div><div class="title">useCallback</div><p class="desc">Función cacheada por deps.</p></a>
+        <a class="card" href="35-hook-useeffect.html"><div class="num">35</div><div class="title">useEffect</div><p class="desc">Efectos, deps, cleanup y timing.</p></a>
+        <a class="card" href="36-hook-usecontext.html"><div class="num">36</div><div class="title">useContext</div><p class="desc">Leer contexto y re-render.</p></a>
+      </div>
+
+      <h2>Cómo leer esta documentación</h2>
+      <p>
+        Los capítulos están ordenados siguiendo el <strong>viaje de un render</strong>:
+        desde que escribes JSX hasta que los píxeles aparecen en pantalla y el estado
+        cambia. Se recomienda leerlos en orden la primera vez; después funcionan como
+        referencia independiente.
+      </p>
+      <p>
+        Todo el código citado proviene del archivo real
+        <code>src/React.ts</code> (y su compilado <code>public/React.js</code>).
+        Los ejemplos viven en <code>src/Examples/</code> y el punto de entrada es
+        <code>src/App.tsx</code>.
+      </p>
+
+      <div class="callout ok">
+        <span class="tag">Convención</span>
+        <p>
+          Los bloques marcados como <strong>Bug corregido</strong> señalan defectos reales
+          encontrados durante el análisis y arreglados en el código. El capítulo 19 los
+          resume todos.
+        </p>
+      </div>
+
+      <p class="footer-note">
+        Proyecto de estudio inspirado en la serie <em>“Build your own React”</em> (Didact)
+        y en la arquitectura Fiber de React. Documentación generada como material académico.
+      </p>
+
+      <div class="pager">
+        <a class="disabled" href="#"></a>
+        <a class="next" href="02-introduccion.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Introducción y objetivos</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

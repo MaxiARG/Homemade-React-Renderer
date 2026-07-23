@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scheduler y workLoop · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a class="active" href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Rendering interrumpible</p>
+      <h1>Scheduler y workLoop</h1>
+      <p class="lead">
+        El <code>workLoop</code> es el bucle que va procesando fibers de a poco, cediendo el
+        hilo al navegador cuando se acaba el tiempo libre de cada frame. Es lo que convierte
+        el render en una tarea cooperativa en vez de un bloqueo monolítico.
+      </p>
+
+      <h2>El bucle real</h2>
+      <p>
+        El scheduler de este clon cabe en una función. Se apoya en
+        <span class="tag-pill">requestIdleCallback</span> del navegador y procesa unidades
+        de trabajo mientras haya trabajo pendiente y quede tiempo en el frame:
+      </p>
+
+      <div class="filename">src/React.ts — workLoop</div>
+      <pre><code>function workLoop(deadline) {
+  let shouldYield = false
+  while (nextUnitOfWork &amp;&amp; !shouldYield) {
+    nextUnitOfWork = performUnitOfWork(
+      nextUnitOfWork
+    )
+    shouldYield = deadline.timeRemaining() &lt; 1
+  }
+
+  if (!nextUnitOfWork &amp;&amp; wipRoot) {
+    commitRoot();
+  }
+
+  requestIdleCallback(workLoop)
+}
+
+//aca es donde se ejecuta el workloop cuando el navegador esta idle
+// this function is one with the lowest priority to execute.
+requestIdleCallback(workLoop)</code></pre>
+
+      <h2>requestIdleCallback: trabajar en los huecos</h2>
+      <p>
+        <code>requestIdleCallback</code> es una API del navegador que ejecuta una función
+        cuando el hilo principal está <em>ocioso</em>, es decir, cuando ha terminado sus
+        tareas prioritarias (procesar eventos, calcular layout, pintar) y le sobra tiempo
+        antes del siguiente frame. Como dice el comentario del código, es «la función con la
+        prioridad más baja para ejecutarse»: no compite con el trabajo urgente del
+        navegador, sino que aprovecha sus ratos libres.
+      </p>
+      <p>
+        Al invocar el callback, el navegador le pasa un objeto <code>deadline</code> que
+        responde <code>deadline.timeRemaining()</code>: los milisegundos que quedan de
+        tiempo ocioso en este frame. Esa es la brújula que el bucle usa para saber cuándo
+        detenerse. La última línea, <code>requestIdleCallback(workLoop)</code>, arranca todo
+        el mecanismo la primera vez que se carga el módulo.
+      </p>
+
+      <h2>El bucle while y shouldYield</h2>
+      <p>
+        El corazón es <code>while (nextUnitOfWork &amp;&amp; !shouldYield)</code>. Se procesa un
+        fiber por iteración: <code>performUnitOfWork</code> hace el trabajo de ese fiber y
+        devuelve el siguiente (siguiendo child → sibling → tío, como vimos en el
+        <a href="09-recorrido-del-arbol.html">recorrido del árbol</a>). El bucle continúa
+        mientras se cumplan dos condiciones:
+      </p>
+      <ol class="steps">
+        <li>Que <strong>haya trabajo</strong>: <code>nextUnitOfWork</code> no es <code>null</code>.</li>
+        <li>Que <strong>no toque ceder</strong>: <code>shouldYield</code> sigue en <code>false</code>.</li>
+      </ol>
+      <p>
+        Después de cada unidad se recalcula
+        <code>shouldYield = deadline.timeRemaining() &lt; 1</code>. Cuando queda menos de un
+        milisegundo de tiempo ocioso, <code>shouldYield</code> pasa a <code>true</code>, el
+        <code>while</code> se corta y la función devuelve el control al navegador. El estado
+        del recorrido no se pierde: vive en la variable global <code>nextUnitOfWork</code>.
+        En el siguiente rato ocioso, <code>requestIdleCallback</code> vuelve a llamar a
+        <code>workLoop</code> y este retoma exactamente donde quedó.
+      </p>
+
+      <div class="callout info">
+        <span class="tag">Nota</span>
+        <p>
+          Ceder el hilo (<em>yield</em>) significa devolvérselo al navegador para que pueda
+          responder a scroll, clics o animaciones sin congelarse. El render «espera su
+          turno» en lugar de acaparar el CPU.
+        </p>
+      </div>
+
+      <h2>Cuando el trabajo termina: commitRoot</h2>
+      <p>
+        Tras el <code>while</code>, el bucle evalúa <code>if (!nextUnitOfWork &amp;&amp; wipRoot)</code>.
+        La combinación es significativa: no queda ninguna unidad de trabajo pendiente
+        (<code>nextUnitOfWork</code> es <code>null</code>) <em>pero</em> todavía existe un
+        árbol en progreso sin publicar (<code>wipRoot</code> no es <code>null</code>). Eso
+        significa que se terminó de construir todo el árbol nuevo y llegó el momento de
+        volcarlo al DOM de una sola vez: se llama a <code>commitRoot()</code>. Todo el
+        trabajo previo solo calculó <em>qué</em> cambiar; el commit es el único punto donde
+        se toca el DOM real.
+      </p>
+
+      <h2>Scheduling cooperativo: dividir el render en chunks</h2>
+      <p>
+        El efecto neto de este diseño es que un render grande se reparte en
+        <strong>chunks</strong> a lo largo de varios frames. En vez de procesar los cientos
+        de fibers de un tirón —lo que congelaría la interfaz—, el motor hace un puñado de
+        fibers, cede, deja que el navegador respire y pinte, y continúa en el siguiente
+        hueco ocioso. A esto se lo llama <em>scheduling cooperativo</em>: el render y el
+        navegador se turnan el hilo principal de mutuo acuerdo.
+      </p>
+
+      <h2>Contraste con el Stack Reconciler</h2>
+      <p>
+        Antes de Fiber, React (versión 15 y anteriores) usaba el <strong>Stack
+        Reconciler</strong>. Era un recorrido <em>recursivo y síncrono</em>: React descendía
+        por el árbol de componentes usando la pila de llamadas del navegador, sin pausas.
+        Una vez iniciado, no podía suspenderse. Las consecuencias eran directas:
+      </p>
+
+      <table>
+        <thead>
+          <tr><th>Stack Reconciler (React ≤ 15)</th><th>workLoop de este clon (Fiber)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Recursivo, apoyado en el call stack</td><td>Iterativo, apoyado en enlaces de fibers</td></tr>
+          <tr><td>Síncrono y bloqueante: procesa «de golpe»</td><td>Interrumpible: cede con <code>shouldYield</code></td></tr>
+          <tr><td>No se puede pausar ni retomar</td><td>Se retoma vía <code>nextUnitOfWork</code></td></tr>
+          <tr><td>Bloquea el hilo si el árbol es grande</td><td>Se reparte en chunks entre frames</td></tr>
+        </tbody>
+      </table>
+
+      <p>
+        Como resume la documentación de conceptos del proyecto, con el Stack Reconciler «no
+        podías pausar el trabajo para dejar que el navegador respondiera a eventos como
+        scroll, animaciones o entrada del usuario», y «si un render grande estaba en
+        progreso, el navegador podía congelarse». Fiber reemplazó ese modelo precisamente
+        para hacer el renderizado interrumpible mediante <em>cooperative scheduling</em>, y
+        para <strong>separar el render del commit</strong>: calcular qué cambiar por un lado,
+        aplicar los cambios al DOM por otro.
+      </p>
+
+      <div class="callout warn">
+        <span class="tag">Cuidado</span>
+        <p>
+          Durante la fase de render el motor <strong>no muta el DOM</strong>. Cada
+          <code>performUnitOfWork</code> solo crea fibers en memoria y calcula
+          <code>effectTag</code>. Si el DOM se tocara aquí, ceder el hilo a mitad de camino
+          dejaría al usuario viendo una UI incompleta. Por eso toda mutación se difiere al
+          <a href="14-commit-phase.html">commit phase</a>, que se ejecuta de un solo golpe
+          en <code>commitRoot()</code> cuando ya no queda trabajo pendiente.
+        </p>
+      </div>
+
+      <div class="pager">
+        <a href="09-recorrido-del-arbol.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Recorrido del árbol de fibers</div>
+        </a>
+        <a class="next" href="11-render-phase.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Render phase</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Context API · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a class="active" href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Datos sin prop-drilling</p>
+      <h1>Context API</h1>
+      <p class="lead">
+        El contexto permite que un valor viaje desde un <code>Provider</code> hasta cualquier
+        descendiente sin pasarlo prop por prop. El motor lo implementa con una pila de contextos que
+        se empuja y se saca durante el recorrido del árbol, y un truco para forzar el re-render de los
+        consumidores.
+      </p>
+
+      <h2>Crear el contexto: <code>createContext</code></h2>
+      <p>
+        <code>createContext</code> devuelve un objeto con el valor actual, el valor por defecto, una
+        marca <code>_isContextProvider</code> y un componente <code>Provider</code>. La relación entre
+        el <code>Provider</code> y su contexto es circular: el <code>Provider</code> lleva una
+        referencia <code>_context</code> de vuelta al objeto, y es esa marca la que el reconciliador
+        detecta.
+      </p>
+      <div class="filename">src/react/context.ts</div>
+      <pre><code>export function createContext&lt;T&gt;(defaultValue: T): ReactContext&lt;T&gt; {
+  const context: ReactContext&lt;T&gt; = {
+    _currentValue: defaultValue,
+    _defaultValue: defaultValue,
+    _isContextProvider: true,
+    Provider: undefined as unknown as FunctionComponent&lt;...&gt;,
+  };
+
+  const Provider: ProviderComponent&lt;T&gt; = (props) =&gt; {
+    // El reconciliador maneja push/pop del valor y reconcilia estos hijos
+    // directamente; este cuerpo es un fallback si alguna vez se invocara.
+    return { type: Fragment, key: null, props: { children: props.children ?? [] } };
+  };
+  Provider._context = context;
+
+  context.Provider = Provider;
+  return context;
+}</code></pre>
+      <p>
+        Nótese que el cuerpo del <code>Provider</code> casi nunca se ejecuta: no es un componente
+        función corriente. El reconciliador lo intercepta antes de llamarlo, hace el trabajo de
+        contexto y reconcilia sus hijos directamente. El cuerpo que devuelve un <code>Fragment</code>
+        es solo un fallback defensivo.
+      </p>
+
+      <h2>El Provider en el reconciliador</h2>
+      <p>
+        En <a href="11-render-phase.html">beginWork</a>, antes de cualquier otra clasificación, se
+        comprueba <code>isProvider(type)</code>. Si el tipo del fiber tiene una propiedad
+        <code>_context</code>, el trabajo se delega a <code>updateContextProvider</code>. Este es el
+        único caso que <strong>nunca</strong> hace <a href="25-bailout-y-memo.html">bailout</a>: un
+        Provider debe empujar su valor a la pila en cada render, pase lo que pase.
+      </p>
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>function updateContextProvider(fiber: Fiber): Fiber | null {
+  const context = (fiber.type as { _context: ReactContext&lt;unknown&gt; })._context;
+  const value = (fiber.props as { value?: unknown }).value;
+  const prevValue = fiber.alternate
+    ? (fiber.alternate.props as { value?: unknown }).value
+    : context._defaultValue;
+
+  // push del valor, guardando el anterior para restaurarlo en completeWork.
+  contextStack.push({ context, value: context._currentValue });
+  context._currentValue = value;
+  fiber.providerContext = context;
+
+  if (fiber.alternate === null || !Object.is(prevValue, value)) {
+    R.forceRenderDepth++;
+    fiber.providerForced = true;
+  }
+
+  fiber.hasPendingUpdate = false;
+  reconcileChildren(fiber, fiber.props.children ?? []);
+  return fiber.child;
+}</code></pre>
+
+      <p>
+        La secuencia es precisa. Primero se <strong>apila el valor anterior</strong>
+        (<code>context._currentValue</code>, lo que había antes de entrar a este Provider) junto con
+        la referencia al contexto. Luego se sobrescribe <code>context._currentValue</code> con el nuevo
+        <code>value</code> de las props. Se marca <code>fiber.providerContext</code> para que
+        <code>completeWork</code> sepa que este fiber tiene que hacer <em>pop</em> al terminar.
+      </p>
+
+      <h2>Forzar el re-render de los consumidores</h2>
+      <p>
+        El punto delicado: si el <code>value</code> cambió respecto al render anterior
+        (<code>!Object.is(prevValue, value)</code>), o si es el primer render
+        (<code>fiber.alternate === null</code>), se incrementa <code>R.forceRenderDepth</code> y se
+        marca <code>fiber.providerForced = true</code>. Mientras <code>forceRenderDepth &gt; 0</code>,
+        el bailout queda <strong>deshabilitado</strong> para todo el subárbol, como se ve en
+        <code>canBailout</code>:
+      </p>
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>function canBailout(fiber: Fiber): boolean {
+  const current = fiber.alternate;
+  if (current === null) return false;             // primer render, hay que montar
+  if (fiber.hasPendingUpdate) return false;       // tiene setState pendiente
+  if (R.forceRenderDepth &gt; 0) return false;       // dentro de un Provider cuyo value cambió
+  return fiber.props === current.props;           // props iguales ⇒ misma salida
+}</code></pre>
+      <p>
+        Sin esta línea, un componente intermedio entre el Provider y el consumidor podría hacer bailout
+        (por tener las mismas props referenciales) y cortar el recorrido antes de llegar al consumidor,
+        que se quedaría con el valor viejo. Al mantener <code>forceRenderDepth &gt; 0</code> mientras se
+        recorre el subárbol del Provider, se garantiza que todos los descendientes se vuelven a
+        ejecutar y, por tanto, que cada <code>useContext</code> lee el valor nuevo.
+      </p>
+
+      <h2>Restaurar la pila: <code>completeWork</code></h2>
+      <p>
+        Cuando el recorrido termina de procesar el subárbol de un Provider,
+        <a href="09-recorrido-del-arbol.html">completeWork</a> deshace lo que hizo
+        <code>updateContextProvider</code>: saca la entrada de la pila, restaura el
+        <code>_currentValue</code> anterior y, si este Provider había forzado el render, decrementa
+        <code>forceRenderDepth</code>.
+      </p>
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>function completeWork(fiber: Fiber): void {
+  if (fiber.providerContext) {
+    const entry = contextStack.pop();
+    if (entry) entry.context._currentValue = entry.value; // restaura el anterior
+    if (fiber.providerForced) R.forceRenderDepth--;
+  }
+}</code></pre>
+      <p>
+        Este emparejamiento push/pop es lo que permite <strong>Providers anidados</strong> del mismo
+        contexto: cada consumidor ve el valor del Provider más cercano hacia arriba, porque al salir de
+        un Provider se restaura exactamente el valor que regía justo por fuera de él.
+      </p>
+
+      <h2>Leer el valor: <code>useContext</code></h2>
+      <p>
+        Con toda la maquinaria de la pila, el hook es trivial: lee el valor vigente en el momento en
+        que corre el componente. Como <code>useContext</code> se ejecuta durante <code>beginWork</code>
+        del consumidor, y el Provider ancestro ya empujó su valor a <code>_currentValue</code> (y aún
+        no lo ha restaurado, porque el <code>completeWork</code> del Provider ocurre <em>después</em>
+        de todo su subárbol), el valor es el correcto.
+      </p>
+      <div class="filename">src/react/hooks.ts</div>
+      <pre><code>export function useContext&lt;T&gt;(context: ReactContext&lt;T&gt;): T {
+  const { fiber } = slot();
+  const value = context._currentValue;
+  const hook: ContextHook&lt;T&gt; = { tag: 'context', context, value };
+  commitHook(fiber, hook as unknown as Hook);
+  return value;
+}</code></pre>
+      <p>
+        El hook consume su <code>slot()</code> y hace <code>commitHook</code> como cualquier otro, para
+        no romper el orden de los índices (véase las <a href="30-hook-usestate.html">reglas de los
+        hooks</a>), pero su lógica se reduce a devolver <code>context._currentValue</code>.
+      </p>
+
+      <h2>La pila de contextos durante el recorrido</h2>
+      <div class="diagram">
+Árbol:                          contextStack (Theme = 'light' por defecto)
+&lt;App&gt;                            ─────────────────────────────────────────────
+  &lt;Theme.Provider value="dark"&gt;   beginWork Provider:
+    &lt;Layout&gt;                        push { Theme, 'light' }   _currentValue = 'dark'
+      &lt;Consumer&gt;                     forceRenderDepth: 0 → 1
+                                    ─────────────────────────────────────────────
+   recorrido hacia abajo ▼         Consumer: useContext(Theme) ⇒ lee 'dark'
+                                    ─────────────────────────────────────────────
+   completeWork del Provider ▲     pop → _currentValue vuelve a 'light'
+                                    forceRenderDepth: 1 → 0
+      </div>
+
+      <h2>El test de <code>useContext</code></h2>
+      <div class="filename">src/react/__tests__/engine.test.ts</div>
+      <pre><code>const Theme = createContext('light');
+function Consumer() {
+  const theme = useContext(Theme);
+  return h('span', null, theme);
+}
+function App() {
+  const [theme, s] = useState('light');
+  setTheme = s;
+  return h(Theme.Provider, { value: theme }, h(Consumer));
+}
+const { container } = mount(h(App));
+expect(container.textContent).toBe('light');
+flushSync(() =&gt; setTheme('dark'));
+expect(container.textContent).toBe('dark');</code></pre>
+      <p>
+        Al montar, el <code>Consumer</code> lee <code>'light'</code>. Cuando <code>setTheme('dark')</code>
+        re-renderiza <code>App</code>, el <code>Provider</code> recibe <code>value="dark"</code>; como
+        difiere del anterior, <code>forceRenderDepth</code> sube a <code>1</code> y el
+        <code>Consumer</code> no puede hacer bailout: se re-ejecuta y su <code>useContext</code>
+        devuelve <code>'dark'</code>. El texto del DOM pasa a <code>'dark'</code>. El
+        <code>flushSync</code> hace que ese cambio sea observable de inmediato (véase
+        <a href="26-batching-flushsync.html">Batching y flushSync</a>).
+      </p>
+
+      <div class="callout warn">
+        <span class="tag">Simplificación</span>
+        <p>
+          Este contexto es más grueso que el de React. <code>forceRenderDepth</code> desactiva el
+          bailout de <strong>todo el subárbol</strong> del Provider cuando el valor cambia: se
+          re-renderiza todo lo que cuelga del Provider, consuma o no el contexto. React, en cambio,
+          mantiene una lista de suscriptores por contexto y solo re-renderiza los componentes que
+          realmente llaman a <code>useContext</code>, propagando el cambio de forma fina aunque haya
+          <code>memo</code> intermedios. Aquí no hay suscripción: hay «fuerza bruta acotada al
+          subárbol», más simple de implementar y suficiente para el objetivo didáctico.
+        </p>
+      </div>
+
+      <div class="pager">
+        <a href="26-batching-flushsync.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Batching y flushSync</div>
+        </a>
+        <a class="next" href="28-fragment-y-error-boundaries.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Fragment y Error Boundaries</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

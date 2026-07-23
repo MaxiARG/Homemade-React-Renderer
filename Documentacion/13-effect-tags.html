@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Effect tags · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a class="active" href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Qué hacer con cada nodo</p>
+      <h1>Effect tags</h1>
+      <p class="lead">
+        Un <code>effectTag</code> es la etiqueta que la <a href="12-reconciliacion.html">reconciliación</a>
+        deja pegada a cada fiber para decirle al commit qué operación aplicar sobre el DOM.
+        Solo existen tres valores: <code>PLACEMENT</code>, <code>UPDATE</code> y
+        <code>DELETION</code>.
+      </p>
+
+      <h2>Un puente entre fases</h2>
+      <p>
+        La <a href="11-render-phase.html">render phase</a> no toca el DOM: solo <em>calcula</em>.
+        Ese cálculo necesita registrarse en algún sitio para que la
+        <a href="14-commit-phase.html">commit phase</a> sepa qué hacer sin volver a razonar
+        el diff. El <code>effectTag</code> es exactamente ese registro: una instrucción de una
+        sola palabra grabada en el fiber durante la reconciliación y leída, más tarde, durante
+        el commit.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>effectTag</th>
+            <th>Cuándo se asigna (reconcileChildren)</th>
+            <th>Qué hace el commit (commitWork)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="tag-pill">PLACEMENT</span></td>
+            <td><code>element &amp;&amp; !sameType</code>: hay elemento nuevo sin viejo del mismo tipo.</td>
+            <td><code>domParent.appendChild(fiber.dom)</code>: inserta el nodo nuevo en su padre.</td>
+          </tr>
+          <tr>
+            <td><span class="tag-pill">UPDATE</span></td>
+            <td><code>sameType</code>: mismo tipo en la misma posición; se reutiliza el dom viejo.</td>
+            <td><code>updateDom(fiber.dom, fiber.alternate.props, fiber.props)</code>: aplica solo las props cambiadas.</td>
+          </tr>
+          <tr>
+            <td><span class="tag-pill">DELETION</span></td>
+            <td><code>oldFiber &amp;&amp; !sameType</code>: sobra un fiber viejo; se marca y se empuja a <code>deletions</code>.</td>
+            <td><code>commitDeletion(fiber, domParent)</code>: corre cleanups y hace <code>removeChild</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Dónde se asignan los tags</h2>
+      <p>
+        Los tres tags nacen dentro de <code>reconcileChildren</code>, cada uno en su rama.
+        Para UPDATE y PLACEMENT el tag se escribe en el <code>newFiber</code> recién creado;
+        para DELETION, como no existe fiber nuevo que represente al nodo borrado, el tag se
+        pega directamente sobre el <code>oldFiber</code>.
+      </p>
+
+      <div class="filename">src/React.ts — reconcileChildren</div>
+      <pre><code>if (sameType) {
+  newFiber = {
+    type: oldFiber.type,
+    props: element.props,
+    dom: oldFiber.dom,
+    parent: wipFiber,
+    alternate: oldFiber,
+    effectTag: "UPDATE",
+  }
+}
+if (element &amp;&amp; !sameType) {
+  newFiber = {
+    type: element.type,
+    props: element.props,
+    dom: null,
+    parent: wipFiber,
+    alternate: null,
+    effectTag: "PLACEMENT",
+  }
+}
+if (oldFiber &amp;&amp; !sameType) {
+  oldFiber.effectTag = "DELETION"
+  deletions.push(oldFiber)
+}</code></pre>
+
+      <h2>El array global deletions</h2>
+      <p>
+        Los PLACEMENT y UPDATE viven en el árbol nuevo, el <code>wipRoot</code>, así que el
+        commit los encuentra recorriéndolo. Pero un nodo <strong>borrado no forma parte del
+        árbol nuevo</strong>: precisamente por eso desaparece. Si dependiéramos solo del
+        recorrido del <code>wipRoot</code> nunca visitaríamos los nodos a eliminar y quedarían
+        colgados en el DOM. La solución es un array global, <code>deletions</code>, donde se
+        acumulan los fibers marcados con DELETION para que el commit pueda procesarlos aparte.
+      </p>
+
+      <div class="callout ok">
+        <span class="tag">Idea clave</span>
+        <p>
+          El comentario del propio código lo resume: <em>“when we commit the fiber tree to the
+          DOM we do it from the work in progress root, which doesn't have the old fibers”</em>.
+          Por eso hace falta la lista aparte.
+        </p>
+      </div>
+
+      <p>
+        <code>deletions</code> se reinicia a <code>[]</code> en cada nuevo render, tanto en
+        <code>render</code> como dentro del <code>setState</code> de
+        <a href="16-usestate.html">useState</a>, de modo que cada ciclo empieza con su propia
+        lista limpia de eliminaciones. El commit la vacía antes que nada:
+      </p>
+
+      <div class="filename">src/React.ts — commitRoot</div>
+      <pre><code>function commitRoot() {
+  deletions.forEach(commitWork)
+  commitWork(wipRoot.child)
+  currentRoot = wipRoot
+  wipRoot = null
+  // ...ejecutar useEffects...
+}</code></pre>
+
+      <p>
+        Nótese el orden: primero <code>deletions.forEach(commitWork)</code> procesa las bajas
+        y solo después <code>commitWork(wipRoot.child)</code> recorre el árbol nuevo aplicando
+        PLACEMENT y UPDATE. En <code>commitWork</code>, el <code>effectTag</code> se lee con
+        una cadena de <code>if/else if</code> que despacha cada caso a su operación de DOM.
+      </p>
+
+      <div class="callout info">
+        <span class="tag">Nota</span>
+        <p>
+          Un fiber sin <code>effectTag</code> (por ejemplo la raíz, o un componente de función
+          que no tiene <code>dom</code>) simplemente no cae en ninguna rama de
+          <code>commitWork</code>: no se aplica ninguna mutación sobre él, aunque su recorrido
+          continúe hacia <code>child</code> y <code>sibling</code>. El detalle completo del
+          recorrido está en la <a href="14-commit-phase.html">Commit phase</a>.
+        </p>
+      </div>
+
+      <div class="pager">
+        <a href="12-reconciliacion.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Reconciliación (diffing)</div>
+        </a>
+        <a class="next" href="14-commit-phase.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Commit phase</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

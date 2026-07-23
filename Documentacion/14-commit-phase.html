@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Commit phase · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a class="active" href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Aplicar los cambios</p>
+      <h1>Commit phase</h1>
+      <p class="lead">
+        La fase de <em>commit</em> es el momento en que todo el trabajo calculado durante la
+        reconciliación se traslada, de una sola vez y sin interrupciones, al DOM real.
+      </p>
+
+      <h2>De la fase de render a la fase de commit</h2>
+      <p>
+        Durante la <a href="11-render-phase.html">render phase</a> el motor construye un árbol de
+        <em>fibers</em> nuevo (el <code>wipRoot</code>) y, mediante
+        <a href="12-reconciliacion.html">reconciliación</a>, etiqueta cada fiber con un
+        <a href="13-effect-tags.html">effect tag</a> (<code>PLACEMENT</code>, <code>UPDATE</code>
+        o <code>DELETION</code>). Ese trabajo es <strong>interrumpible</strong>: el
+        <code>workLoop</code> puede cederle el control al navegador tantas veces como haga falta
+        porque, hasta aquí, <em>nada</em> ha tocado el DOM. El disparador de la fase de commit vive
+        en el propio bucle de trabajo:
+      </p>
+
+      <div class="filename">src/React.ts</div>
+      <pre><code>function workLoop(deadline) {
+  let shouldYield = false
+  while (nextUnitOfWork &amp;&amp; !shouldYield) {
+    nextUnitOfWork = performUnitOfWork(nextUnitOfWork)
+    shouldYield = deadline.timeRemaining() &lt; 1
+  }
+
+  if (!nextUnitOfWork &amp;&amp; wipRoot) {
+    commitRoot();
+  }
+
+  requestIdleCallback(workLoop)
+}</code></pre>
+      <p>
+        La condición <code>!nextUnitOfWork &amp;&amp; wipRoot</code> es la clave: solo cuando ya no
+        queda ninguna unidad de trabajo pendiente <em>y</em> existe un árbol en progreso, se llama
+        a <code>commitRoot()</code>. Es decir, el árbol completo está calculado antes de que se
+        aplique el primer cambio.
+      </p>
+
+      <h2><code>commitRoot</code>: el orquestador</h2>
+      <p>
+        La función <code>commitRoot</code> coordina la fase entera en cuatro pasos precisos:
+      </p>
+
+      <div class="filename">src/React.ts</div>
+      <pre><code>function commitRoot() {
+  //And then, when we are commiting the changes to the DOM, we also use the fibers from that array.
+  deletions.forEach(commitWork)
+  commitWork(wipRoot.child)
+  currentRoot = wipRoot
+  wipRoot = null
+
+  // Ejecutar todos los useEffect. Estos siempre se ejecutan luego de haber ejecutado todo lo demas.
+  wipEffects.forEach(e =&gt; e());
+  wipEffects = [];
+}</code></pre>
+
+      <ol class="steps">
+        <li>
+          <strong>Procesar las eliminaciones.</strong> <code>deletions.forEach(commitWork)</code>
+          recorre el array <code>deletions</code>, que la reconciliación fue llenando con los
+          fibers viejos marcados como <code>DELETION</code>. Se procesan primero porque esos fibers
+          <em>no</em> forman parte del nuevo árbol <code>wipRoot</code> y deben tratarse aparte.
+        </li>
+        <li>
+          <strong>Aplicar el resto del árbol.</strong> <code>commitWork(wipRoot.child)</code>
+          arranca el recorrido recursivo desde el primer hijo de la raíz en progreso, aplicando las
+          altas (<code>PLACEMENT</code>) y actualizaciones (<code>UPDATE</code>).
+        </li>
+        <li>
+          <strong>Fijar el árbol comprometido.</strong> <code>currentRoot = wipRoot</code> guarda
+          la referencia al árbol que acaba de tocar el DOM. Ese <code>currentRoot</code> será el
+          <code>alternate</code> del próximo render, es decir, el «antes» contra el que se diferencia
+          el «después». Luego <code>wipRoot = null</code> cierra la fase.
+        </li>
+        <li>
+          <strong>Ejecutar los efectos.</strong> <code>wipEffects.forEach(e =&gt; e())</code> corre
+          todos los <code>useEffect</code> pendientes <em>al final</em>, cuando el DOM ya está
+          actualizado, y luego vacía la lista con <code>wipEffects = []</code>. Este orden es
+          deliberado: los efectos deben ver la interfaz ya pintada (véase
+          <a href="17-useeffect-y-cleanup.html">17 · Hook useEffect y cleanup</a>).
+        </li>
+      </ol>
+
+      <h2><code>commitWork</code>: recorrido y mutación</h2>
+      <p>
+        <code>commitWork</code> es una función recursiva que visita cada fiber y aplica la mutación
+        que su <code>effectTag</code> indica. Su primer trabajo, sin embargo, es
+        <strong>encontrar el nodo del DOM padre</strong>. No basta con mirar <code>fiber.parent</code>:
+        los componentes de función no tienen nodo propio (<code>dom</code> es <code>null</code>), así
+        que hay que subir por el árbol hasta topar con un fiber que sí tenga <code>dom</code>.
+      </p>
+
+      <div class="filename">src/React.ts</div>
+      <pre><code>function commitWork(fiber) {
+  if (!fiber) {
+    return
+  }
+
+  let domParentFiber = fiber.parent
+  //to find the parent of a DOM node we'll need to go up the fiber tree until we find a fiber with a DOM node.
+  while (!domParentFiber.dom) {
+    domParentFiber = domParentFiber.parent
+  }
+  const domParent = domParentFiber.dom
+
+  if (fiber.effectTag === "PLACEMENT" &amp;&amp; fiber.dom != null) {
+    domParent.appendChild(fiber.dom)
+  } else if (fiber.effectTag === "UPDATE" &amp;&amp; fiber.dom != null) {
+    updateDom(fiber.dom, fiber.alternate.props, fiber.props)
+  } else if (fiber.effectTag === "DELETION") {
+    commitDeletion(fiber, domParent)
+  }
+  // recorrido recursivo por el fiber tree
+  commitWork(fiber.child)
+  commitWork(fiber.sibling)
+}</code></pre>
+
+      <p>Una vez localizado <code>domParent</code>, se decide qué hacer según el effect tag:</p>
+      <ul>
+        <li>
+          <code>PLACEMENT</code> con <code>dom</code> no nulo &rarr;
+          <code>domParent.appendChild(fiber.dom)</code>: se inserta el nodo nuevo.
+        </li>
+        <li>
+          <code>UPDATE</code> con <code>dom</code> no nulo &rarr;
+          <code>updateDom(fiber.dom, fiber.alternate.props, fiber.props)</code>: se sincronizan las
+          props cambiadas sobre el nodo existente (detalle completo en
+          <a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a>).
+        </li>
+        <li>
+          <code>DELETION</code> &rarr; <code>commitDeletion(fiber, domParent)</code>: se retira el
+          nodo.
+        </li>
+      </ul>
+      <p>
+        Al final, las dos llamadas <code>commitWork(fiber.child)</code> y
+        <code>commitWork(fiber.sibling)</code> continúan el recorrido en profundidad por todo el
+        árbol, exactamente igual que la estructura enlazada <code>child</code>/<code>sibling</code>
+        que se detalló en <a href="09-recorrido-del-arbol.html">el recorrido del árbol</a>.
+      </p>
+
+      <h2><code>commitDeletion</code>: bajar hasta encontrar DOM</h2>
+      <p>
+        Eliminar un fiber tiene su propia sutileza. Si el fiber eliminado es un componente de
+        función, no tiene <code>dom</code> propio, así que hay que <strong>bajar</strong> por sus
+        hijos hasta encontrar el primer nodo real que efectivamente quitar del padre. Además, antes
+        de tocar el DOM, hay que ejecutar los <em>cleanups</em> de sus hooks: un componente
+        desmontado debe limpiar sus efectos.
+      </p>
+
+      <div class="filename">src/React.ts</div>
+      <pre><code>function commitDeletion(fiber, domParent) {
+  // Ejecutar cleanups de hooks antes de eliminar el nodo
+  if (fiber.hooks) {
+    fiber.hooks.forEach(hook =&gt; {
+      if (typeof hook.cleanup === 'function') {
+        hook.cleanup();
+      }
+    });
+  }
+
+  if (fiber.dom) {
+    domParent.removeChild(fiber.dom);
+  } else if (fiber.child) {
+    commitDeletion(fiber.child, domParent);
+  }
+}</code></pre>
+
+      <div class="callout ok">
+        <span class="tag">Idea clave</span>
+        <p>
+          Fíjate en la simetría con <code>commitWork</code>: para insertar y actualizar hay que
+          <em>subir</em> hasta un padre con DOM; para eliminar hay que <em>bajar</em> hasta un hijo
+          con DOM. En ambos casos la razón es la misma: los componentes de función son
+          «transparentes» al DOM, no producen ningún nodo por sí mismos.
+        </p>
+      </div>
+
+      <h2>¿Por qué una fase separada e ininterrumpible?</h2>
+      <p>
+        La separación entre <em>render</em> y <em>commit</em> es una de las decisiones de
+        arquitectura más importantes de React, y este clon la respeta. El comentario que precede a
+        <code>render</code> en el fuente lo explica sin rodeos: el problema de mutar el DOM mientras
+        se construye el árbol es que <em>«el navegador podría interrumpir nuestro trabajo antes de
+        terminar de renderizar el árbol completo. En ese caso, el usuario vería una interfaz
+        incompleta»</em>.
+      </p>
+      <p>
+        Por eso el trabajo se divide en dos: una fase de render <strong>interrumpible</strong>, que
+        solo calcula y etiqueta fibers en memoria y puede pausarse mil veces con
+        <span class="tag-pill">requestIdleCallback</span> sin que se note; y una fase de commit
+        <strong>atómica</strong>, que aplica todos los cambios de golpe. Como <code>commitRoot</code>
+        no consulta <code>deadline.timeRemaining()</code> ni cede el control en ningún punto, el
+        usuario nunca ve un estado intermedio: o ve la interfaz anterior, o ve la nueva, nunca una a
+        medio construir.
+      </p>
+
+      <div class="callout info">
+        <span class="tag">Nota</span>
+        <p>
+          En React real la fase de commit también es síncrona e ininterrumpible por esta misma
+          razón, y se subdivide internamente (<em>before mutation</em>, <em>mutation</em>,
+          <em>layout</em>). Aquí todo eso se condensa en <code>commitRoot</code> más el barrido de
+          <code>wipEffects</code>, que hace las veces de la fase de efectos pasivos.
+        </p>
+      </div>
+
+      <div class="pager">
+        <a href="13-effect-tags.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Effect tags</div>
+        </a>
+        <a class="next" href="15-updatedom-props-eventos-estilos.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">updateDom: props, eventos, estilos</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

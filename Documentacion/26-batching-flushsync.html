@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Batching y flushSync · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a class="active" href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Agrupar actualizaciones</p>
+      <h1>Batching y flushSync</h1>
+      <p class="lead">
+        Varios <code>setState</code> disparados en el mismo tick no producen varios renders: se
+        acumulan en un conjunto de roots «sucios» y se drenan de una vez en un <code>queueMicrotask</code>.
+        <code>flushSync</code> es la puerta de escape que fuerza el trabajo a correr sincrónicamente.
+      </p>
+
+      <h2>El problema que resuelve el batching</h2>
+      <p>
+        Si cada <code>setState</code> arrancara su propia render phase, un manejador de eventos que
+        actualiza tres estados provocaría tres renders y tres commits consecutivos, dos de ellos
+        desechados de inmediato. El <em>batching</em> agrupa todas las actualizaciones que ocurren
+        antes de que el motor tenga la oportunidad de correr, y las colapsa en un único render. El
+        <a href="10-scheduler-workloop.html">scheduler</a> del motor implementa esto con tres piezas
+        de estado a nivel de módulo: un conjunto de roots pendientes, una bandera de «ya hay un flush
+        agendado» y un contador de profundidad de <code>flushSync</code>.
+      </p>
+
+      <div class="filename">src/react/scheduler.ts</div>
+      <pre><code>const pendingRoots = new Set&lt;RootStateContainer&gt;();
+let flushScheduled = false;
+let batchDepth = 0;
+
+/** Llamado por los hooks/clases cuando hay una actualización de estado. */
+export function scheduleUpdate(fiber: Fiber): void {
+  const root = fiber.root;
+  if (!root) return;
+  root.dirtyFibers.add(fiber);
+  pendingRoots.add(root);
+  ensureFlush();
+}</code></pre>
+
+      <p>
+        Cuando un <code>dispatch</code> de <a href="30-hook-usestate.html">useState</a> marca su fiber
+        como <code>hasPendingUpdate</code> y llama a <code>scheduleUpdate</code>, no se renderiza nada
+        en el acto. El fiber se añade a <code>root.dirtyFibers</code>, el root al conjunto
+        <code>pendingRoots</code>, y todo el trabajo real queda a cargo de <code>ensureFlush</code>.
+        Un mismo root añadido dos veces al <code>Set</code> sigue siendo una sola entrada: ahí ya
+        empieza a manifestarse el agrupamiento.
+      </p>
+
+      <h2><code>ensureFlush</code>: un solo microtask por lote</h2>
+      <div class="filename">src/react/scheduler.ts</div>
+      <pre><code>function ensureFlush(): void {
+  if (batchDepth &gt; 0) return; // dentro de flushSync: se drena al salir
+  if (flushScheduled) return;
+  flushScheduled = true;
+  queueMicrotask(() =&gt; {
+    flushScheduled = false;
+    flushAll();
+  });
+}</code></pre>
+
+      <p>
+        Aquí está el corazón del batching. La bandera <code>flushScheduled</code> garantiza que,
+        aunque se llame a <code>scheduleUpdate</code> diez veces seguidas, solo se agenda
+        <strong>un</strong> <code>queueMicrotask</code>. Como un microtask no corre hasta que la pila
+        de llamadas sincrónica se vacía, todos los <code>setState</code> de un mismo tick (por ejemplo,
+        los de un mismo manejador de eventos) terminan de ejecutarse <em>antes</em> de que el callback
+        del microtask empiece. Para cuando <code>flushAll</code> corre, <code>pendingRoots</code> ya
+        contiene todos los roots afectados y cada uno se procesa una única vez.
+      </p>
+
+      <p>
+        La primera guarda, <code>if (batchDepth &gt; 0) return</code>, es la que conecta el batching
+        con <code>flushSync</code>: si ya estamos dentro de un <code>flushSync</code>, no tiene sentido
+        agendar un microtask, porque el trabajo se va a drenar sincrónicamente al salir. Esa es la
+        razón de ser del contador <code>batchDepth</code>.
+      </p>
+
+      <h2><code>flushSync</code>: drenar todo, ya</h2>
+      <div class="filename">src/react/scheduler.ts</div>
+      <pre><code>/** Ejecuta un callback y drena TODO el trabajo pendiente de forma síncrona. */
+export function flushSync&lt;T&gt;(fn?: () =&gt; T): T | undefined {
+  batchDepth++;
+  let result: T | undefined;
+  try {
+    if (fn) result = fn();
+  } finally {
+    batchDepth--;
+    if (batchDepth === 0) flushAll();
+  }
+  return result;
+}</code></pre>
+
+      <p>
+        <code>flushSync</code> incrementa <code>batchDepth</code>, ejecuta el callback (durante el cual
+        cualquier <code>setState</code> solo encola trabajo, sin agendar microtasks gracias a la guarda
+        de <code>ensureFlush</code>), y en el <code>finally</code> decrementa el contador. Cuando
+        <code>batchDepth</code> vuelve a cero — es decir, al salir del <code>flushSync</code> más
+        externo — llama a <code>flushAll</code> para procesar sincrónicamente todo lo acumulado. El
+        contador, en vez de un simple booleano, permite <strong>anidar</strong> llamadas a
+        <code>flushSync</code>: solo el más externo dispara el drenado.
+      </p>
+
+      <p>
+        Este es el mecanismo que usa el <a href="21-refactor-modulos-roots.html">render inicial</a>
+        (para que el primer árbol aparezca de inmediato, sin esperar a un microtask) y, sobre todo,
+        los tests: envolver una acción en <code>flushSync</code> hace que sus efectos sobre el DOM sean
+        observables en la línea siguiente, sin necesidad de <code>await</code> ni de temporizadores.
+      </p>
+
+      <h2><code>flushAll</code> y <code>performRootWork</code></h2>
+      <div class="filename">src/react/scheduler.ts</div>
+      <pre><code>function flushAll(): void {
+  // Copiamos porque performRootWork puede re-agendar (efectos con setState).
+  const roots = Array.from(pendingRoots);
+  pendingRoots.clear();
+  for (const root of roots) performRootWork(root);
+}
+
+function performRootWork(root: RootStateContainer): void {
+  if (!root.wipRoot) {
+    if (!root.currentRoot) return;
+    prepareFreshWip(root);
+  }
+  R.activeRoot = root;
+  workLoopSync(root);
+  commitRoot(root);
+  root.dirtyFibers.clear();
+  R.activeRoot = null;
+}</code></pre>
+
+      <p>
+        <code>flushAll</code> copia <code>pendingRoots</code> a un array y lo limpia <em>antes</em> de
+        iterar. El comentario explica el porqué: durante <code>performRootWork</code> puede correr un
+        <a href="35-hook-useeffect.html">useEffect</a> que a su vez llame a <code>setState</code>, lo
+        que volvería a poblar <code>pendingRoots</code>; copiar primero evita procesar ese nuevo
+        trabajo dentro del mismo bucle de forma inconsistente. Para cada root, <code>performRootWork</code>
+        prepara un work-in-progress fresco si hace falta (<code>prepareFreshWip</code>), corre el
+        <code>workLoopSync</code> completo, comitea y limpia <code>dirtyFibers</code>.
+      </p>
+
+      <div class="filename">src/react/scheduler.ts</div>
+      <pre><code>function workLoopSync(root: RootStateContainer): void {
+  while (root.nextUnitOfWork) {
+    try {
+      root.nextUnitOfWork = performUnitOfWork(root.nextUnitOfWork);
+    } catch (error) {
+      handleRenderError(root, error);
+    }
+  }
+}</code></pre>
+
+      <p>
+        A diferencia del <code>workLoop</code> original, que troceaba el trabajo según el tiempo
+        disponible del frame, <code>workLoopSync</code> es un bucle <em>sin interrupciones</em>: recorre
+        todos los <code>performUnitOfWork</code> del árbol de un tirón. El nombre lo dice: es render
+        síncrono. El <code>try/catch</code> canaliza cualquier excepción hacia el
+        <a href="28-fragment-y-error-boundaries.html">Error Boundary</a> más cercano.
+      </p>
+
+      <h2>El test que lo demuestra</h2>
+      <p>
+        El test <strong>«batching: dos setState en un tick = un solo re-render»</strong> aísla
+        exactamente este comportamiento contando cuántas veces se ejecuta el cuerpo del componente:
+      </p>
+      <div class="filename">src/react/__tests__/engine.test.ts</div>
+      <pre><code>const { container } = mount(h(App));
+expect(renders).toBe(1);
+flushSync(() =&gt; {
+  setA(1);
+  setB(2);
+});
+expect(container.textContent).toBe('1-2');
+expect(renders).toBe(2); // no 3</code></pre>
+
+      <p>
+        Dentro del <code>flushSync</code>, <code>setA(1)</code> y <code>setB(2)</code> encolan sus
+        acciones y añaden el mismo root a <code>pendingRoots</code>. Como <code>batchDepth &gt; 0</code>,
+        ninguno agenda un microtask. Al cerrarse el <code>flushSync</code>, un único
+        <code>flushAll</code> procesa el root una sola vez: el contador <code>renders</code> pasa de
+        <code>1</code> a <code>2</code>, no a <code>3</code>. Dos actualizaciones, un render.
+      </p>
+
+      <h2>Línea de tiempo</h2>
+      <div class="diagram">
+ tick sincrónico                         │  cola de microtasks
+─────────────────────────────────────────┼───────────────────────
+ setState(A)                             │
+   └─ scheduleUpdate → pendingRoots={r}  │
+   └─ ensureFlush → flushScheduled=true ─┼─▶ [ flushAll ]
+ setState(B)                             │
+   └─ scheduleUpdate → pendingRoots={r}  │   (mismo Set, misma entrada)
+   └─ ensureFlush → flushScheduled ya    │
+      es true ⇒ NO agenda otro microtask │
+                                         │
+ (la pila se vacía) ─────────────────────┼─▶ corre el microtask:
+                                         │      flushAll()
+                                         │        └─ performRootWork(r)
+                                         │             ├─ workLoopSync  (1 render)
+                                         │             └─ commitRoot    (1 commit)
+      </div>
+
+      <div class="callout info">
+        <span class="tag">Comparación con React</span>
+        <p>
+          React 18 introdujo el <strong>batching automático</strong>: antes solo se agrupaban las
+          actualizaciones dentro de manejadores de eventos de React, y las que ocurrían en promesas,
+          <code>setTimeout</code> o callbacks nativos escapaban del lote. Desde React 18, con
+          <code>createRoot</code>, cualquier grupo de <code>setState</code> se agrupa sin importar el
+          origen. Este motor logra un efecto parecido apoyándose en <code>queueMicrotask</code> en vez
+          del scheduler de prioridades de React, y expone <code>flushSync</code> con la misma intención
+          que <code>ReactDOM.flushSync</code>: salir del lote y aplicar los cambios de inmediato.
+        </p>
+      </div>
+
+      <div class="callout warn">
+        <span class="tag">Diferencia</span>
+        <p>
+          El batching aquí es «todo o nada» por microtask, no interrumpible ni por prioridades: no hay
+          <code>lanes</code>, ni transiciones (<code>useTransition</code>), ni render concurrente.
+          <code>workLoopSync</code> corre hasta terminar el árbol. Es suficiente para colapsar
+          múltiples <code>setState</code> en un render, pero no ofrece las garantías de responsividad
+          del scheduler real de React.
+        </p>
+      </div>
+
+      <div class="pager">
+        <a href="25-bailout-y-memo.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Bailout y memoización</div>
+        </a>
+        <a class="next" href="27-context-api.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Context API</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

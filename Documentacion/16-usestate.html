@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hook useState · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a class="active" href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Estado que sobrevive al re-render</p>
+      <h1>Hook useState</h1>
+      <p class="lead">
+        <code>useState</code> es solo una función, pero consigue «recordar» su valor entre renders
+        apoyándose en el fiber anterior (<code>alternate</code>) y en un índice de hook estable.
+      </p>
+
+      <h2>El problema que resuelve</h2>
+      <p>
+        Un componente de función se vuelve a ejecutar entero en cada render: sus variables locales
+        nacen y mueren con cada llamada. ¿Cómo puede entonces <code>useState(2)</code> devolver
+        <code>3</code> tras un click, si el <code>2</code> inicial se vuelve a evaluar cada vez? La
+        respuesta es que el estado no vive en el componente, sino <strong>en el fiber</strong>, y
+        <code>useState</code> lo rescata del fiber del render anterior a través de la propiedad
+        <code>alternate</code>.
+      </p>
+
+      <h2>La función completa</h2>
+      <div class="filename">src/React.ts</div>
+      <pre><code>function useState(initial) {
+  const oldHook =
+    wipFiber.alternate &amp;&amp;
+    wipFiber.alternate.hooks &amp;&amp;
+    wipFiber.alternate.hooks[hookIndex]
+  const hook = {
+    state: oldHook ? oldHook.state : initial,
+    queue: [],
+  }
+
+  const actions = oldHook ? oldHook.queue : []
+  actions.forEach(action =&gt; {
+    hook.state = action(hook.state)
+  })
+
+  const setState = action =&gt; {
+    hook.queue.push(action)
+    wipRoot = {
+      dom: currentRoot.dom,
+      props: currentRoot.props,
+      alternate: currentRoot,
+    }
+    nextUnitOfWork = wipRoot //Esto hace que se ejecute un nuevo render
+    deletions = []
+  }
+
+  wipFiber.hooks.push(hook)
+  hookIndex++
+  return [hook.state, setState]
+}</code></pre>
+
+      <h2>Recuperar el hook anterior</h2>
+      <p>
+        Lo primero es buscar el <strong>hook viejo</strong> en el mismo fiber del render anterior. Se
+        accede a <code>wipFiber.alternate.hooks[hookIndex]</code>: <code>wipFiber</code> es el fiber
+        que se está procesando (fijado en <code>updateFunctionComponent</code>),
+        <code>alternate</code> apunta al fiber comprometido en el commit previo, y
+        <code>hookIndex</code> identifica <em>cuál</em> de los hooks del componente es. Las
+        comprobaciones encadenadas con <code>&amp;&amp;</code> protegen el primer render, cuando aún
+        no hay <code>alternate</code> ni <code>hooks</code>.
+      </p>
+
+      <h2>Reconstruir el estado con la cola de acciones</h2>
+      <p>
+        En vez de guardar un número mutable, cada hook lleva una <code>queue</code> de acciones
+        pendientes. El estado se inicializa desde el hook viejo (<code>oldHook ? oldHook.state : initial</code>)
+        y luego se aplican <strong>una a una</strong> las acciones que quedaron encoladas desde el
+        render anterior:
+      </p>
+      <div class="filename">src/React.ts</div>
+      <pre><code>const actions = oldHook ? oldHook.queue : []
+actions.forEach(action =&gt; {
+  hook.state = action(hook.state)
+})</code></pre>
+      <p>
+        Cada <code>action</code> es una función <code>estado &rarr; nuevoEstado</code>. Al aplicarlas
+        en secuencia sobre <code>hook.state</code>, el estado que finalmente se devuelve ya está
+        actualizado. Este diseño diferido — encolar ahora, aplicar en el próximo render — es lo que
+        permite que <code>setState</code> no tenga que recalcular nada de inmediato.
+      </p>
+
+      <h2><code>setState</code>: encolar y programar el re-render</h2>
+      <p>
+        <code>setState</code> hace dos cosas. Primero, empuja la acción a la cola del hook con
+        <code>hook.queue.push(action)</code>. Segundo, <strong>programa un nuevo render</strong>
+        recreando el <code>wipRoot</code> a partir de <code>currentRoot</code> (el último árbol
+        comprometido) y apuntando <code>nextUnitOfWork</code> a esa nueva raíz:
+      </p>
+      <div class="filename">src/React.ts</div>
+      <pre><code>const setState = action =&gt; {
+  hook.queue.push(action)
+  wipRoot = {
+    dom: currentRoot.dom,
+    props: currentRoot.props,
+    alternate: currentRoot,
+  }
+  nextUnitOfWork = wipRoot //Esto hace que se ejecute un nuevo render
+  deletions = []
+}</code></pre>
+      <p>
+        Es exactamente el mismo mecanismo que usa la función <code>render</code> para arrancar el
+        primer dibujado: se establece un <code>wipRoot</code> con <code>alternate: currentRoot</code>
+        y se coloca como <code>nextUnitOfWork</code>. La próxima vez que el <code>workLoop</code>
+        encuentre trabajo (véase <a href="10-scheduler-workloop.html">Scheduler y workLoop</a>),
+        arrancará una nueva <a href="11-render-phase.html">render phase</a> y, al terminar, un nuevo
+        <a href="14-commit-phase.html">commit</a>. También se reinicia <code>deletions = []</code>
+        para acumular limpiamente las eliminaciones del nuevo diffing.
+      </p>
+
+      <h2>Guardar el hook y devolver el par</h2>
+      <p>
+        Al final, el hook se añade al fiber actual con <code>wipFiber.hooks.push(hook)</code>, se
+        incrementa <code>hookIndex++</code> para que la próxima llamada a un hook use su propio
+        índice, y se devuelve el par <code>[hook.state, setState]</code>, la firma familiar de
+        <code>const [x, setX] = useState(...)</code>.
+      </p>
+
+      <div class="callout warn">
+        <span class="tag">Cuidado</span>
+        <p>
+          <strong>Reglas de los hooks.</strong> Todo este mecanismo depende de que
+          <code>hookIndex</code> sea <em>estable</em>: el hook nº0 de este render debe corresponder al
+          hook nº0 del render anterior. Por eso los hooks no se pueden llamar dentro de
+          condicionales ni bucles: si en un render se saltara un <code>useState</code>, los índices se
+          desalinearían y cada hook recuperaría el estado equivocado de <code>alternate.hooks[hookIndex]</code>.
+          El orden de las llamadas <em>es</em> la identidad de cada hook.
+        </p>
+      </div>
+
+      <h2>Ejemplo: el contador</h2>
+      <p>
+        El componente <code>Counter</code> del proyecto ejercita todo lo anterior. Declara su estado
+        con <code>useState(2)</code> y lo actualiza pasando una <strong>función actualizadora</strong>
+        a <code>setCounter</code>:
+      </p>
+      <div class="filename">src/Examples/components/Counter.tsx</div>
+      <pre><code>const Counter = () =&gt; {
+  const [counter, setCounter] = window.React.useState(2)
+
+  return (
+    &lt;div&gt;
+      &lt;button onClick={() =&gt; {
+        console.log('onClick');
+        setCounter(c =&gt; c + 1);
+      }}&gt;
+        Click me
+      &lt;/button&gt;
+      Counter: {counter}
+    &lt;/div&gt;
+  );
+};</code></pre>
+      <p>
+        Seguir un click paso a paso ilumina toda la maquinaria. El usuario pulsa el botón;
+        <code>setCounter(c =&gt; c + 1)</code> encola la acción <code>c =&gt; c + 1</code> en
+        <code>hook.queue</code> y programa el re-render. En el siguiente render,
+        <code>useState</code> encuentra el <code>oldHook</code> con <code>state: 2</code> y su cola
+        con esa acción; la aplica (<code>2 &rarr; 3</code>) y devuelve <code>3</code>. El componente
+        renderiza <code>Counter: 3</code>, la reconciliación etiqueta el nodo de texto como
+        <code>UPDATE</code> y el commit lo escribe en pantalla.
+      </p>
+
+      <div class="callout ok">
+        <span class="tag">Idea clave</span>
+        <p>
+          Pasar una función (<code>c =&gt; c + 1</code>) en lugar de un valor (<code>counter + 1</code>)
+          es lo correcto aquí porque el estado se calcula aplicando la cola sobre el estado base. Si
+          se encolaran varias acciones antes de renderizar, cada una recibiría el resultado de la
+          anterior, sin depender de una variable <code>counter</code> ya obsoleta.
+        </p>
+      </div>
+
+      <p>
+        El estado ya sobrevive a los renders; falta ver cómo se ejecuta lógica <em>después</em> de
+        pintar. Eso se aborda al hablar del <a href="17-useeffect-y-cleanup.html">hook useEffect y
+        cleanup</a>, y el recorrido completo, desde el click hasta el DOM, se recompone en el
+        <a href="18-ciclo-de-vida-completo.html">ciclo de vida completo</a>.
+      </p>
+
+      <div class="pager">
+        <a href="15-updatedom-props-eventos-estilos.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">updateDom: props, eventos, estilos</div>
+        </a>
+        <a class="next" href="17-useeffect-y-cleanup.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Hook useEffect y cleanup</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

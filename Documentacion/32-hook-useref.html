@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>useRef — ciclo de vida completo · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a class="active" href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Caja mutable</p>
+      <h1>useRef — ciclo de vida completo</h1>
+      <p class="lead">
+        <code>useRef</code> es el hook más simple del motor: entrega una <strong>caja mutable</strong>
+        <code>{ current }</code> cuya identidad no cambia entre renders. Mutar <code>.current</code> no
+        dispara ningún re-render, lo que lo vuelve ideal para guardar valores que deben persistir sin
+        afectar la pintura.
+      </p>
+
+      <h2>Firma y para qué sirve</h2>
+      <p>
+        La firma es <code>useRef&lt;T&gt;(initial: T): { current: T }</code>. Devuelve un objeto con
+        una única propiedad <code>current</code>, inicializada la primera vez con el valor recibido.
+        Sirve para referencias a nodos del DOM, temporizadores, valores previos o cualquier dato
+        mutable que no deba provocar un render al cambiar.
+      </p>
+      <div class="filename">src/react/hooks.ts</div>
+      <pre><code>export function useRef&lt;T&gt;(initial: T): { current: T } {
+  const { fiber, old } = slot();
+  const hook =
+    (old as RefHook&lt;T&gt; | undefined) ??
+    ({ tag: 'ref', ref: { current: initial } } as RefHook&lt;T&gt;);
+  commitHook(fiber, hook as unknown as Hook);
+  return hook.ref;
+}</code></pre>
+      <p>
+        Un uso mínimo: <code>const ref = useRef(0)</code>; luego <code>ref.current++</code> muta la
+        caja sin re-renderizar.
+      </p>
+
+      <h2>Dónde vive el estado</h2>
+      <p>
+        La caja vive en un <code>RefHook</code>, la rama más escueta de la unión <code>Hook</code>.
+        Solo tiene su etiqueta <code>tag: 'ref'</code> y el objeto <code>ref: { current: T }</code>.
+        No hay cola ni dispatch: nada que agende trabajo.
+      </p>
+      <div class="filename">src/react/types.ts</div>
+      <pre><code>export interface RefHook&lt;T = unknown&gt; {
+  tag: 'ref';
+  ref: { current: T };
+}</code></pre>
+      <p>
+        Como los demás hooks, el <code>RefHook</code> persiste reutilizándose desde
+        <code>fiber.alternate.hooks[hookIndex]</code> a través de <code>slot()</code>. La clave es que
+        se reutiliza <strong>el objeto <code>ref</code> entero</strong>, no solo su valor: por eso la
+        identidad de la caja es estable render tras render.
+      </p>
+
+      <h2>Primer render (mount)</h2>
+      <ol class="steps">
+        <li>
+          <code>updateFunctionComponent</code> prepara <code>R.wipFiber</code>,
+          <code>R.hookIndex = 0</code> y <code>fiber.hooks = []</code>.
+        </li>
+        <li>
+          <code>slot()</code> devuelve <code>old = undefined</code>, así que se crea el
+          <code>RefHook</code> con la caja <code>ref: { current: initial }</code>.
+        </li>
+        <li>
+          El valor inicial se guarda una única vez: en renders futuros nunca se vuelve a leer
+          <code>initial</code>.
+        </li>
+        <li>
+          <code>commitHook(fiber, hook)</code> empuja el hook e incrementa <code>R.hookIndex++</code>.
+        </li>
+        <li>
+          Se devuelve <code>hook.ref</code> — la caja que el componente usará.
+        </li>
+      </ol>
+
+      <h2>Renders siguientes (update)</h2>
+      <p>
+        En cada re-render, <code>slot()</code> encuentra el hook viejo y el operador <code>??</code>
+        lo reutiliza: <strong>no se crea una caja nueva</strong> y el <code>initial</code> pasado se
+        ignora por completo. Se devuelve el <em>mismo</em> objeto <code>ref</code> que en el mount,
+        con el valor que tuviera en <code>.current</code> (incluidas las mutaciones que el componente
+        haya hecho entre renders).
+      </p>
+      <div class="callout ok">
+        <span class="tag">Identidad estable</span>
+        <p>
+          Como el <code>RefHook</code> se saca de <code>alternate.hooks[hookIndex]</code> y se
+          devuelve <code>hook.ref</code> sin reconstruirlo, dos renders consecutivos ven exactamente
+          el mismo objeto. Esa es la propiedad que hace útil a <code>useRef</code>: un contenedor
+          persistente que no se recrea.
+        </p>
+      </div>
+      <p>
+        El test <code>useRef mantiene identidad entre renders</code> lo verifica: acumula la ref
+        devuelta en cada render y comprueba que la referencia es la misma tras un
+        <code>setN(1)</code>.
+      </p>
+      <div class="filename">src/react/__tests__/engine.test.ts</div>
+      <pre><code>test('useRef mantiene identidad entre renders', () =&gt; {
+  const refs: Array&lt;{ current: number }&gt; = [];
+  let setN!: Dispatch&lt;SetStateAction&lt;number&gt;&gt;;
+  function App() {
+    const [n, s] = useState(0);
+    setN = s;
+    const ref = useRef(0);
+    refs.push(ref);
+    return h('span', null, String(n));
+  }
+  mount(h(App));
+  flushSync(() =&gt; setN(1));
+  expect(refs[0]).toBe(refs[1]); // misma referencia
+});</code></pre>
+
+      <h2>La actualización / disparador</h2>
+      <p>
+        <code>useRef</code> <strong>no tiene disparador</strong>. A diferencia de
+        <a href="30-hook-usestate.html">useState</a>, su hook no guarda <code>queue</code> ni
+        <code>dispatch</code>, y nunca llama a <code>scheduleUpdate</code> ni marca
+        <code>hasPendingUpdate</code>. Mutar <code>ref.current = X</code> cambia el contenido de la
+        caja de forma inmediata y silenciosa: el DOM no se actualiza y no se agenda ningún trabajo en
+        el <a href="10-scheduler-workloop.html">scheduler</a>.
+      </p>
+      <div class="callout info">
+        <span class="tag">La diferencia con useState</span>
+        <p>
+          <code>useState</code> encola la acción y llama a <code>scheduleUpdate(target)</code>, lo que
+          agenda un microtask y termina en un nuevo render. <code>useRef</code> no hace nada de eso:
+          escribís <code>.current</code> y listo. Si necesitás que la UI reaccione a un cambio, ese
+          cambio debe pasar por estado, no por una ref.
+        </p>
+      </div>
+      <p>
+        El valor mutado sí queda visible en el próximo render que ocurra por <em>otra</em> causa
+        (por ejemplo un <code>setState</code> vecino), porque la caja es la misma. Pero la ref por sí
+        sola nunca es la <em>causa</em> de ese render.
+      </p>
+
+      <h2>Orden de ejecución</h2>
+      <p>
+        <code>useRef</code> corre durante la <a href="11-render-phase.html">render phase</a>, en el
+        cuerpo del componente dentro de <code>updateFunctionComponent</code>, en el punto exacto en
+        que se lo invoca. Es síncrono y sin efectos secundarios sobre el scheduler: su único trabajo
+        es reservar/recuperar el slot y devolver la caja. Las mutaciones a <code>.current</code> las
+        hace el componente cuando quiera (durante el render, en un handler o en un
+        <a href="35-hook-useeffect.html">efecto</a>).
+      </p>
+
+      <h2>Reglas de los hooks</h2>
+      <p>
+        Aunque no tenga estado reactivo, <code>useRef</code> ocupa un slot y avanza
+        <code>R.hookIndex</code> en <code>commitHook</code> igual que cualquier otro hook. Por eso su
+        posición en la lista de llamadas importa: <code>slot()</code> recupera su caja por
+        <code>alternate.hooks[hookIndex]</code>.
+      </p>
+      <div class="callout warn">
+        <span class="tag">Cuidado</span>
+        <p>
+          No llames <code>useRef</code> condicionalmente. Si un render lo omite, los índices de todos
+          los hooks siguientes se desalinean y cada uno recupera el slot equivocado — incluida la ref,
+          que podría devolver la caja de otro hook.
+        </p>
+      </div>
+
+      <h2>Diagrama de secuencia</h2>
+      <div class="diagram">MOUNT
+  updateFunctionComponent: R.wipFiber = fiber, R.hookIndex = 0, fiber.hooks = []
+  useRef(0)
+    slot() -&gt; old = undefined
+    crea RefHook { tag:'ref', ref: { current: 0 } }
+    commitHook -&gt; hooks.push, hookIndex++
+  return hook.ref   (caja A)
+        |
+        v
+MUTACION  ref.current = 42
+  escribe en la caja A directamente
+  NO hay queue, NO hay scheduleUpdate, NO hasPendingUpdate
+  el DOM no cambia, no se agenda render
+        |
+        v
+UPDATE  (render disparado por OTRA causa, p.ej. un setState vecino)
+  slot() -&gt; old = alternate.hooks[hookIndex]  (MISMO RefHook)
+  ?? reutiliza el hook: initial se IGNORA
+  commitHook -&gt; hookIndex++
+  return hook.ref   (MISMA caja A, current = 42)  ->  refs[0] === refs[1]</div>
+
+      <div class="pager">
+        <a href="31-hook-usereducer.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">useReducer — ciclo de vida</div>
+        </a>
+        <a class="next" href="33-hook-usememo.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">useMemo — ciclo de vida</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

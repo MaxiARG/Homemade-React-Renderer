@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ciclo de vida completo · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a class="active" href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Todo junto</p>
+      <h1>Ciclo de vida completo</h1>
+      <p class="lead">
+        Hemos diseccionado cada pieza por separado: <code>createElement</code>, el
+        fiber, el <code>workLoop</code>, la reconciliación, el commit y los hooks. Ahora
+        seguiremos a un único componente —<code>Counter</code>— de punta a punta, desde
+        que <code>React.render</code> lo arranca hasta que un clic dispara una
+        actualización y sus efectos se limpian y vuelven a correr.
+      </p>
+
+      <h2>El componente que trazamos</h2>
+      <p>
+        <code>Counter</code> concentra los tres mecanismos interesantes: estado con
+        <code>useState</code>, un efecto con cleanup dependiente de <code>[counter]</code>,
+        y un manejador <code>onClick</code> que provoca la actualización. Sus
+        <code>console.log</code> nos servirán de sondas para observar cada fase.
+      </p>
+
+      <div class="filename">src/Examples/components/Counter.tsx</div>
+      <pre><code>const Counter = () =&gt; {
+  const [counter, setCounter] = window.React.useState(2)
+  console.log('Counter Render started ejecutado exitosamente')
+
+  window.React.useEffect(() =&gt; {
+    console.log('Counter useEffect ejecutado exitosamente')
+    return (() =&gt; {
+       console.log('xx Counter useEffect cleanup ejecutado exitosamente xx')
+    })
+  }, [counter])
+
+  console.log('Counter Render finished ejecutado exitosamente')
+  return (
+    &lt;div&gt;
+      &lt;button onClick={() =&gt; { console.log('onClick'); setCounter(c =&gt; c + 1); }}&gt;
+        Click me
+      &lt;/button&gt;
+      Counter: {counter}
+    &lt;/div&gt;
+  );
+};</code></pre>
+
+      <h2>Fase 1 — Montaje inicial</h2>
+      <p>
+        Cuando la página carga, <code>React.render(element, container)</code> siembra el
+        árbol de trabajo y arranca la maquinaria perezosa del scheduler.
+      </p>
+
+      <ol class="steps">
+        <li>
+          <strong>React.render</strong> construye el <code>wipRoot</code> —el fiber raíz—
+          con <code>dom: container</code>, <code>alternate: currentRoot</code> (aún
+          <code>null</code>) y lo apunta con <code>nextUnitOfWork = wipRoot</code>. Vacía
+          <code>deletions</code>.
+        </li>
+        <li>
+          <strong>requestIdleCallback</strong> invoca <code>workLoop</code> cuando el
+          navegador está ocioso. El bucle procesa unidades de trabajo mientras
+          <code>nextUnitOfWork</code> exista y quede tiempo (<code>shouldYield</code>).
+        </li>
+        <li>
+          <strong>performUnitOfWork</strong> corre por cada fiber. Al llegar al fiber de
+          <code>Counter</code>, detecta <code>fiber.type instanceof Function</code> y
+          delega en <code>updateFunctionComponent</code>.
+        </li>
+        <li>
+          <strong>updateFunctionComponent</strong> fija <code>wipFiber</code>,
+          reinicia <code>hookIndex = 0</code> y <code>wipFiber.hooks = []</code>, y
+          <strong>ejecuta la función</strong>: <code>fiber.type(fiber.props)</code>. Aquí
+          se imprime <code>Counter Render started</code>, se registran los hooks
+          (<code>useState</code>, <code>useEffect</code>) y se imprime <code>Counter Render
+          finished</code>. El efecto, con <code>hasChanged = true</code> en el montaje, se
+          encola en <code>wipEffects</code>.
+        </li>
+        <li>
+          <strong>reconcileChildren</strong> compara los elementos devueltos contra el
+          árbol anterior (vacío), por lo que cada hijo se marca con effectTag
+          <code>PLACEMENT</code>.
+        </li>
+        <li>
+          <strong>commitRoot</strong> corre cuando <code>nextUnitOfWork</code> se agota y
+          aún hay <code>wipRoot</code>. Recorre las <code>deletions</code>, luego
+          <code>commitWork(wipRoot.child)</code>, que crea e inserta los nodos reales en
+          el <strong>DOM</strong>.
+        </li>
+        <li>
+          <strong>useEffect ejecutado</strong>: ya con el DOM montado,
+          <code>commitRoot</code> drena <code>wipEffects</code> y se imprime
+          <code>Counter useEffect ejecutado</code>. Este es el momento de los
+          <em>passive effects</em>.
+        </li>
+      </ol>
+
+      <p>Secuencia de consola esperada en el montaje:</p>
+      <div class="diagram">Counter Render started ejecutado exitosamente
+Counter Render finished ejecutado exitosamente
+Counter useEffect ejecutado exitosamente</div>
+
+      <h2>Fase 2 — Actualización por clic</h2>
+      <p>
+        El usuario pulsa el botón. Aquí es donde el <code>alternate</code> y la cola de
+        acciones de <code>useState</code> cobran vida.
+      </p>
+
+      <ol class="steps">
+        <li>
+          <strong>onClick</strong> se dispara (imprime <code>onClick</code>) y llama
+          <code>setCounter(c =&gt; c + 1)</code>.
+        </li>
+        <li>
+          <strong>setState</strong> encola la acción en <code>hook.queue</code> y
+          reprograma el render: crea un nuevo <code>wipRoot</code> con
+          <code>dom: currentRoot.dom</code>, <code>props: currentRoot.props</code> y
+          <code>alternate: currentRoot</code>, fija <code>nextUnitOfWork = wipRoot</code> y
+          vacía <code>deletions</code>. No renderiza aún: solo agenda trabajo para el
+          próximo <code>workLoop</code>.
+        </li>
+        <li>
+          <strong>Nuevo render</strong>: el <code>workLoop</code> vuelve a invocar
+          <code>performUnitOfWork</code> → <code>updateFunctionComponent</code>, que
+          ejecuta <code>Counter</code> de nuevo (imprime otra vez <code>Counter Render
+          started</code>).
+        </li>
+        <li>
+          <strong>useState aplica la acción</strong>: recupera el <code>oldHook</code>
+          desde <code>wipFiber.alternate.hooks[hookIndex]</code>, copia su
+          <code>state</code>, y reproduce las acciones acumuladas
+          (<code>actions.forEach(action =&gt; hook.state = action(hook.state))</code>). Así
+          <code>counter</code> pasa de <code>2</code> a <code>3</code>.
+        </li>
+        <li>
+          <strong>reconcileChildren marca UPDATE</strong>: como los tipos coinciden con el
+          árbol previo (<code>sameType</code>), los fibers se reutilizan conservando su
+          <code>dom</code> y se etiquetan <code>UPDATE</code>.
+        </li>
+        <li>
+          <strong>commit actualiza el nodo de texto</strong>: <code>commitWork</code>
+          detecta el effectTag <code>UPDATE</code> y llama <code>updateDom</code> sobre el
+          nodo existente; el texto <code>Counter: 2</code> se reescribe a
+          <code>Counter: 3</code>. No se recrea el DOM, solo se parchea.
+        </li>
+        <li>
+          <strong>cleanup + nuevo efecto</strong>: <code>counter</code> cambió, así que
+          <code>hasChanged</code> es <code>true</code>. Al drenar <code>wipEffects</code>
+          en <code>commitRoot</code>, la función encolada ejecuta primero el cleanup del
+          render anterior y luego el efecto nuevo.
+        </li>
+      </ol>
+
+      <p>Secuencia de consola esperada al hacer clic:</p>
+      <div class="diagram">onClick
+Counter Render started ejecutado exitosamente
+Counter Render finished ejecutado exitosamente
+xx Counter useEffect cleanup ejecutado exitosamente xx
+Counter useEffect ejecutado exitosamente</div>
+
+      <div class="callout ok">
+        <span class="tag">Idea clave</span>
+        <p>
+          El render se ejecuta durante la fase de render (los <code>console.log</code> del
+          cuerpo del componente), pero los efectos —y el cleanup— se ejecutan en la fase
+          de passive effects, <strong>después</strong> del commit. Por eso los mensajes de
+          <em>Render</em> preceden siempre a los de <em>cleanup</em> y <em>useEffect</em>.
+        </p>
+      </div>
+
+      <h2>Línea de tiempo de las tres fases</h2>
+      <p>
+        El siguiente diagrama sitúa cada <code>console.log</code> de <code>Counter</code>
+        en la fase donde ocurre. La fase de render puede interrumpirse
+        (<code>shouldYield</code>); la de commit y la de effects, no.
+      </p>
+
+      <div class="diagram">  RENDER PHASE            |  COMMIT PHASE          |  PASSIVE EFFECTS
+  (interrumpible)         |  (síncrona)            |  (post-commit)
+  ----------------------- | ---------------------- | ------------------------
+  performUnitOfWork       |  commitRoot            |  wipEffects.forEach(e=&gt;e())
+  updateFunctionComponent |  deletions.forEach     |
+  fiber.type(props)       |  commitWork(child)     |  hook.cleanup()   (previo)
+  useState / useEffect    |  updateDom / append    |  hook.effect()    (nuevo)
+  reconcileChildren       |  muta el DOM real      |
+  ----------------------- | ---------------------- | ------------------------
+  "Render started"        |                        |  "cleanup ejecutado"
+  "Render finished"       |                        |  "useEffect ejecutado"</div>
+
+      <div class="callout info">
+        <span class="tag">Nota</span>
+        <p>
+          Que las tres fases estén tan separadas es lo que permite, en React real, pausar
+          y reanudar el render sin dejar el DOM a medias: nada se muta hasta el commit.
+          Este motor hereda esa disciplina aunque, por simplicidad, recorra todo el árbol
+          en cada pasada. Repasa los detalles de cada etapa en
+          <a href="11-render-phase.html">Render phase</a> y
+          <a href="14-commit-phase.html">Commit phase</a>.
+        </p>
+      </div>
+
+      <p>
+        Con el ciclo completo a la vista, el siguiente capítulo confronta este motor con
+        React real: qué comparten, en qué se simplifica, y qué defectos concretos se
+        corrigieron durante el estudio.
+      </p>
+
+      <div class="pager">
+        <a href="17-useeffect-y-cleanup.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Hook useEffect y cleanup</div>
+        </a>
+        <a class="next" href="19-diferencias-y-bugs.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Diferencias con React y bugs</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

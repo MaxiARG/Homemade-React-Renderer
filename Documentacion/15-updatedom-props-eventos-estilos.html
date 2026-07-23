@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>updateDom: props, eventos y estilos · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a class="active" href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Sincronizar props con el DOM</p>
+      <h1>updateDom: props, eventos y estilos</h1>
+      <p class="lead">
+        <code>updateDom</code> es la única función del motor que realmente escribe sobre un nodo del
+        DOM: compara las props viejas con las nuevas y aplica exactamente la diferencia.
+      </p>
+
+      <h2>Dónde encaja</h2>
+      <p>
+        <code>updateDom(dom, prevProps, nextProps)</code> se invoca en dos lugares. Al crear un nodo
+        desde cero, <code>createDom</code> la llama con props previas vacías —
+        <code>updateDom(dom, {}, fiber.props)</code> — de modo que todas las props se traten como
+        «nuevas». Y durante la <a href="14-commit-phase.html">fase de commit</a>, cuando un fiber
+        tiene <code>effectTag</code> <code>UPDATE</code>, <code>commitWork</code> la invoca con
+        <code>updateDom(fiber.dom, fiber.alternate.props, fiber.props)</code>, comparando el estado
+        anterior contra el nuevo.
+      </p>
+
+      <h2>Los cuatro helpers</h2>
+      <p>
+        Antes de la función hay cuatro pequeñas funciones auxiliares que clasifican y comparan las
+        claves de props. Son la gramática con la que <code>updateDom</code> razona:
+      </p>
+
+      <div class="filename">src/React.ts</div>
+      <pre><code>const isEvent = key =&gt; key.startsWith("on")
+//if the prop name starts with the "on" prefix we'll handle them differently.
+const isProperty = key =&gt; key !== "children" &amp;&amp; !isEvent(key)
+const isNew = (prev, next) =&gt; key =&gt;
+  prev[key] !== next[key]
+const isGone = (prev, next) =&gt; key =&gt; !(key in next)</code></pre>
+
+      <ul>
+        <li><code>isEvent</code>: la clave empieza por <code>on</code> (ej. <code>onClick</code>) &rarr; es un manejador de eventos.</li>
+        <li><code>isProperty</code>: no es <code>children</code> ni un evento &rarr; es una propiedad normal del nodo.</li>
+        <li><code>isNew(prev, next)(key)</code>: el valor cambió entre el render anterior y el nuevo.</li>
+        <li><code>isGone(prev, next)(key)</code>: la clave existía antes pero ya no está en las props nuevas.</li>
+      </ul>
+
+      <h2>Los cuatro pasos de <code>updateDom</code></h2>
+      <p>
+        El cuerpo de la función es una secuencia de cuatro barridos, cada uno filtrando las claves
+        con los helpers anteriores. El orden importa: primero se retira lo viejo, luego se aplica lo
+        nuevo.
+      </p>
+
+      <div class="filename">src/React.ts</div>
+      <pre><code>function updateDom(dom, prevProps, nextProps) {
+  //Remove old or changed event listeners
+  Object.keys(prevProps)
+    .filter(isEvent)
+    .filter(key =&gt;
+      !(key in nextProps) || isNew(prevProps, nextProps)(key)
+    )
+    .forEach(name =&gt; {
+      const eventType = name.toLowerCase().substring(2)
+      dom.removeEventListener(eventType, prevProps[name])
+    })
+
+  // Remove old properties
+  Object.keys(prevProps)
+    .filter(isProperty)
+    .filter(isGone(prevProps, nextProps))
+    .forEach(name =&gt; {
+      if (name === "style" &amp;&amp; typeof prevProps.style === "object") {
+        Object.keys(prevProps.style || {}).forEach(styleName =&gt; {
+          dom.style[styleName] = "";
+        });
+      } else {
+        dom[name] = "";
+      }
+    });
+
+  // Set new or changed properties
+  Object.keys(nextProps)
+    .filter(isProperty)
+    .filter(isNew(prevProps, nextProps))
+    .forEach(name =&gt; {
+      if (name === "style" &amp;&amp; typeof nextProps.style === "object") {
+        Object.assign(dom.style, nextProps.style);
+      } else {
+        dom[name] = nextProps[name];
+      }
+    });
+
+  // Add event listeners
+  Object.keys(nextProps)
+    .filter(isEvent)
+    .filter(isNew(prevProps, nextProps))
+    .forEach(name =&gt; {
+      const eventType = name.toLowerCase().substring(2)
+      dom.addEventListener(eventType, nextProps[name])
+    })
+}</code></pre>
+
+      <ol class="steps">
+        <li>
+          <strong>Quitar listeners viejos o cambiados.</strong> Para cada clave <code>on*</code> que
+          desapareció o cuyo valor cambió, se llama a <code>removeEventListener</code>. El nombre del
+          evento se obtiene bajando a minúsculas y quitando el prefijo <code>on</code> con
+          <code>name.toLowerCase().substring(2)</code>: <code>onClick</code> &rarr; <code>click</code>.
+        </li>
+        <li>
+          <strong>Quitar propiedades que desaparecieron.</strong> Para cada propiedad normal presente
+          antes y ausente ahora (<code>isGone</code>), se limpia asignando <code>dom[name] = ""</code>
+          (o el estilo, caso especial que veremos enseguida).
+        </li>
+        <li>
+          <strong>Poner propiedades nuevas o cambiadas.</strong> Para cada propiedad que cambió
+          (<code>isNew</code>), se asigna directamente <code>dom[name] = nextProps[name]</code>.
+        </li>
+        <li>
+          <strong>Agregar listeners nuevos.</strong> Finalmente, para cada evento nuevo o cambiado, se
+          registra con <code>addEventListener</code>.
+        </li>
+      </ol>
+
+      <div class="callout info">
+        <span class="tag">Nota</span>
+        <p>
+          Retirar el listener viejo <em>antes</em> de añadir el nuevo evita fugas: si en cada render
+          se limitara a hacer <code>addEventListener</code>, un mismo nodo acumularía manejadores
+          duplicados. Como en <a href="16-usestate.html">useState</a> cada <code>setState</code>
+          genera funciones nuevas, sin este paso 1 la limpieza sería imposible.
+        </p>
+      </div>
+
+      <h2>Estilos: objeto contra cadena</h2>
+      <p>
+        La propiedad <code>style</code> recibe un trato especial porque puede llegar de dos maneras.
+        Cuando es un <strong>objeto</strong>, el paso 3 usa
+        <code>Object.assign(dom.style, nextProps.style)</code>, que copia cada par
+        propiedad/valor sobre el objeto <code>style</code> del nodo. Este es el patrón idiomático que
+        se ve en el ejemplo <code>StyledComponent</code>:
+      </p>
+
+      <div class="filename">src/Examples/StyledComponent.tsx</div>
+      <pre><code>const StyledComponent = () =&gt; {
+  return &lt;div style={{
+    color: "blue",
+    backgroundColor: "white",
+    padding: "20px"
+  }}&gt;Just a big Blue styled box&lt;/div&gt;;
+};</code></pre>
+      <p>
+        La <strong>doble llave</strong> <code>style={{ ... }}</code> no es un capricho de sintaxis:
+        la llave exterior abre una expresión JSX y la interior es el objeto literal de estilos. Tras
+        transpilar, se convierte en <code>createElement("div", { style: { color: "blue", ... } })</code>,
+        y ese objeto es justo lo que <code>Object.assign</code> vuelca sobre <code>dom.style</code>.
+      </p>
+      <p>
+        Cuando <code>style</code> es una <strong>cadena</strong> (por ejemplo
+        <code>style="background: salmon"</code>), la condición <code>typeof nextProps.style === "object"</code>
+        es falsa y cae en la rama <code>else</code>, que hace <code>dom[name] = nextProps[name]</code>:
+        asigna la cadena a <code>dom.style</code>, lo que el navegador interpreta como el
+        <code>cssText</code> completo del elemento.
+
+      </p>
+
+      <div class="callout bug">
+        <span class="tag">Bug corregido</span>
+        <p>
+          <strong>Bug nº2 — Limpieza de estilo string.</strong> Al remover props viejas (paso 2), la
+          rama de <code>style</code> hacía <code>Object.keys(prevProps.style)</code> asumiendo
+          siempre un objeto. Con un estilo en cadena, <code>Object.keys("background: salmon")</code>
+          devuelve los <em>índices de los caracteres</em> (<code>"0"</code>, <code>"1"</code>, …) y
+          terminaba escribiendo <code>dom.style["0"] = ""</code>, etc. La corrección fue guardar esa
+          rama tras <code>typeof prevProps.style === "object"</code>; una cadena cae ahora al
+          <code>else</code>, que limpia el <code>cssText</code> completo con <code>dom[name] = ""</code>.
+        </p>
+      </div>
+
+      <h2>Clasificación de props</h2>
+      <p>
+        En resumen, cada clave de <code>props</code> recibe uno de cuatro tratamientos según qué sea:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Tipo de prop</th>
+            <th>Detectada por</th>
+            <th>Tratamiento en <code>updateDom</code></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>children</code></td>
+            <td><code>key === "children"</code></td>
+            <td>Ignorada: no es un atributo del DOM, la manejan los fibers hijos.</td>
+          </tr>
+          <tr>
+            <td>Eventos <code>on*</code></td>
+            <td><code>isEvent</code></td>
+            <td><code>addEventListener</code> / <code>removeEventListener</code> con el nombre en minúsculas sin <code>on</code>.</td>
+          </tr>
+          <tr>
+            <td><code>style</code></td>
+            <td><code>name === "style"</code></td>
+            <td>Objeto &rarr; <code>Object.assign(dom.style, obj)</code>; cadena &rarr; asignada a <code>dom.style</code> (cssText).</td>
+          </tr>
+          <tr>
+            <td>Resto (<code>id</code>, <code>className</code>, <code>nodeValue</code>…)</td>
+            <td><code>isProperty</code></td>
+            <td>Propiedad directa: <code>dom[name] = value</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout ok">
+        <span class="tag">Idea clave</span>
+        <p>
+          Este renderer asigna propiedades del DOM (<code>dom[name]</code>), no atributos
+          (<code>setAttribute</code>). Por eso funciona <code>className</code> pero no
+          <code>class</code>: la primera es una propiedad del elemento, la segunda solo un atributo.
+          Es la misma convención que React expone en JSX.
+        </p>
+      </div>
+
+      <p>
+        Con las props ya sincronizadas sobre el DOM, el siguiente capítulo cambia de tema hacia el
+        estado que sobrevive a estos renders: el <a href="16-usestate.html">hook useState</a>.
+      </p>
+
+      <div class="pager">
+        <a href="14-commit-phase.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Commit phase</div>
+        </a>
+        <a class="next" href="16-usestate.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Hook useState</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

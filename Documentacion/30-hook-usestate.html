@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>useState — ciclo de vida completo · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a class="active" href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Estado local</p>
+      <h1>useState — ciclo de vida completo</h1>
+      <p class="lead">
+        <code>useState</code> es la pieza que le da memoria a un componente función. Su valor no vive
+        en la función — que se re-ejecuta entera en cada render — sino en un objeto <code>Hook</code>
+        que <strong>persiste</strong> reutilizándose desde el fiber del render anterior.
+      </p>
+
+      <h2>Firma y para qué sirve</h2>
+      <p>
+        La firma es <code>useState&lt;S&gt;(initial: S): [S, Dispatch&lt;SetStateAction&lt;S&gt;&gt;]</code>:
+        recibe un valor inicial (o una función que lo produce) y devuelve el par
+        <code>[estado, dispatch]</code>. El <code>dispatch</code> (el clásico <code>setState</code>)
+        acepta tanto un valor directo como una función actualizadora <code>prev &rarr; next</code>.
+      </p>
+      <div class="filename">src/react/hooks.ts</div>
+      <pre><code>export function useState&lt;S&gt;(initial: S): [S, Dispatch&lt;SetStateAction&lt;S&gt;&gt;] {
+  const { fiber, old } = slot();
+  const hook =
+    (old as StateHook&lt;S&gt; | undefined) ??
+    ({
+      tag: 'state',
+      state: typeof initial === 'function' ? (initial as () =&gt; S)() : initial,
+      queue: [],
+      dispatch: null as unknown as Dispatch&lt;SetStateAction&lt;S&gt;&gt;,
+    } as StateHook&lt;S&gt;);
+  // ...
+}</code></pre>
+      <p>
+        Un uso mínimo: <code>const [n, setN] = useState(0)</code>, y luego <code>setN(n + 1)</code> o
+        <code>setN(c =&gt; c + 1)</code> para programar un re-render.
+      </p>
+
+      <h2>Dónde vive el estado</h2>
+      <p>
+        El estado vive en un <code>StateHook</code>, una de las ramas de la unión discriminada
+        <code>Hook</code> definida en <code>types.ts</code>. Su etiqueta es <code>tag: 'state'</code>
+        y guarda tres cosas: el <code>state</code> actual, una <code>queue</code> de acciones
+        pendientes y el <code>dispatch</code> estable.
+      </p>
+      <div class="filename">src/react/types.ts</div>
+      <pre><code>export interface StateHook&lt;S = unknown&gt; {
+  tag: 'state';
+  state: S;
+  queue: Array&lt;(prev: S) =&gt; S&gt;;
+  dispatch: Dispatch&lt;SetStateAction&lt;S&gt;&gt;;
+}</code></pre>
+      <p>
+        La persistencia es el corazón del modelo: en cada render, <code>slot()</code> lee el hook
+        del render anterior desde <code>fiber.alternate?.hooks?.[R.hookIndex]</code>. Si existe, se
+        <strong>reutiliza el mismo objeto</strong> (con su <code>state</code>, su <code>queue</code> y
+        su <code>dispatch</code> ya creados); solo si no existe se crea uno nuevo. Ese reuso es lo que
+        hace que el valor sobreviva a la re-ejecución de la función.
+      </p>
+      <div class="filename">src/react/hooks.ts</div>
+      <pre><code>function slot(): { fiber: Fiber; old: Hook | undefined } {
+  const fiber = R.wipFiber;
+  if (!fiber || !fiber.hooks) {
+    throw new Error('Los hooks solo pueden llamarse dentro del render de un componente.');
+  }
+  const old = fiber.alternate?.hooks?.[R.hookIndex];
+  return { fiber, old };
+}</code></pre>
+
+      <h2>Primer render (mount)</h2>
+      <ol class="steps">
+        <li>
+          El reconciliador, en <a href="21-refactor-modulos-roots.html">updateFunctionComponent</a>,
+          fija <code>R.wipFiber = fiber</code>, pone <code>R.hookIndex = 0</code> y crea
+          <code>fiber.hooks = []</code> antes de ejecutar el cuerpo del componente.
+        </li>
+        <li>
+          Al invocar <code>useState(0)</code>, <code>slot()</code> devuelve <code>old = undefined</code>
+          (no hay <code>alternate</code> todavía), así que se construye un <code>StateHook</code> fresco.
+        </li>
+        <li>
+          El <strong>valor inicial</strong> se evalúa: si <code>initial</code> es una función se llama
+          (<code>(initial as () =&gt; S)()</code>, la variante <em>lazy initializer</em>); si no, se
+          usa tal cual.
+        </li>
+        <li>
+          La <code>queue</code> arranca vacía y aún no hay acciones que aplicar.
+        </li>
+        <li>
+          <code>commitHook(fiber, hook)</code> empuja el hook a <code>fiber.hooks</code> e incrementa
+          <code>R.hookIndex++</code>, dejando el índice listo para el próximo hook.
+        </li>
+      </ol>
+      <div class="filename">src/react/hooks.ts</div>
+      <pre><code>function commitHook(fiber: Fiber, hook: Hook): void {
+  fiber.hooks!.push(hook);
+  R.hookIndex++;
+}</code></pre>
+
+      <h2>Renders siguientes (update)</h2>
+      <p>
+        En un re-render, <code>slot()</code> encuentra el hook viejo en
+        <code>fiber.alternate.hooks[hookIndex]</code> y el operador <code>??</code> lo reutiliza en
+        vez de crear otro. Antes de devolver el estado, se <strong>aplica la cola</strong>: cada
+        acción es una función <code>prev &rarr; next</code> que se ejecuta en secuencia sobre
+        <code>hook.state</code>, y luego la cola se vacía.
+      </p>
+      <div class="filename">src/react/hooks.ts</div>
+      <pre><code>// Aplicar acciones encoladas (valor directo o funcional).
+if (hook.queue.length &gt; 0) {
+  for (const action of hook.queue) {
+    hook.state = action(hook.state);
+  }
+  hook.queue.length = 0;
+}</code></pre>
+      <p>
+        Nótese que la cola guarda <em>siempre</em> funciones actualizadoras. Cuando se llama
+        <code>setN(5)</code> con un valor directo, el <code>dispatch</code> lo envuelve en
+        <code>() =&gt; 5</code> antes de encolarlo, de modo que el bucle de aplicación es uniforme.
+        Aplicar varias acciones en orden da el batching correcto: cada una recibe el resultado de la
+        anterior, sin depender de una variable <code>n</code> ya obsoleta del render viejo.
+      </p>
+
+      <h2>La actualización / disparador</h2>
+      <p>
+        El <code>dispatch</code> se crea <strong>una sola vez</strong> (guardado con
+        <code>if (!hook.dispatch)</code>) para que su identidad sea estable entre renders — igual que
+        React garantiza que el setter no cambia. Como el objeto hook se reutiliza, ese
+        <code>dispatch</code> también sobrevive. Al llamarlo: normaliza la acción a función, la empuja
+        a la cola, marca el fiber como sucio y programa el trabajo.
+      </p>
+      <div class="filename">src/react/hooks.ts</div>
+      <pre><code>if (!hook.dispatch) {
+  const capturedHook = hook;
+  hook.dispatch = (action: SetStateAction&lt;S&gt;) =&gt; {
+    const updater =
+      typeof action === 'function' ? (action as (p: S) =&gt; S) : () =&gt; action;
+    capturedHook.queue.push(updater);
+    const target = fiberRef.current;
+    if (target) {
+      target.hasPendingUpdate = true;
+      scheduleUpdate(target);
+    }
+  };
+}
+const fiberRef = (hook as unknown as { _fiberRef?: { current: Fiber } })._fiberRef ?? {
+  current: fiber,
+};
+fiberRef.current = fiber;</code></pre>
+      <p>
+        El detalle sutil es <code>fiberRef.current</code>. El <code>dispatch</code> es estable pero el
+        fiber cambia en cada render (doble buffer). Si el closure capturara el <code>fiber</code> del
+        mount, apuntaría a un fiber viejo. En su lugar captura un <code>fiberRef</code> mutable que en
+        cada render se actualiza a <code>fiber</code>: así el dispatch siempre apunta al fiber vigente.
+        Marca <code>hasPendingUpdate = true</code> (lo que desactiva el <a href="25-bailout-y-memo.html">bailout</a>)
+        y llama a <code>scheduleUpdate</code>.
+      </p>
+      <div class="filename">src/react/scheduler.ts</div>
+      <pre><code>export function scheduleUpdate(fiber: Fiber): void {
+  const root = fiber.root;
+  if (!root) return;
+  root.dirtyFibers.add(fiber);
+  pendingRoots.add(root);
+  ensureFlush();
+}</code></pre>
+      <p>
+        <code>ensureFlush</code> agenda un <code>queueMicrotask</code> — salvo que estemos dentro de
+        <span class="tag-pill">flushSync</span> (<code>batchDepth &gt; 0</code>), en cuyo caso el
+        trabajo se drena al salir. Ese es el <strong>batching</strong>: varios <code>dispatch</code>
+        seguidos apilan acciones en la cola y comparten un único render.
+      </p>
+
+      <h2>Orden de ejecución</h2>
+      <p>
+        El <code>useState</code> corre durante la <a href="11-render-phase.html">render phase</a>,
+        dentro de <code>updateFunctionComponent</code>, en el mismo momento en que se ejecuta el
+        cuerpo del componente. La aplicación de la cola sucede antes de devolver el estado, así que el
+        componente ya renderiza con el valor nuevo. El re-render que dispara el <code>dispatch</code>,
+        en cambio, es <strong>asíncrono</strong> (microtask) a menos que se fuerce con
+        <code>flushSync</code>. Los <a href="35-hook-useeffect.html">efectos</a> corren después, tras
+        el commit.
+      </p>
+
+      <h2>Reglas de los hooks</h2>
+      <p>
+        Todo el mecanismo se apoya en que <code>R.hookIndex</code> sea estable: el hook nº0 de este
+        render debe corresponder al hook nº0 del anterior, porque <code>slot()</code> recupera el
+        estado viejo justamente por <code>alternate.hooks[hookIndex]</code>. El índice avanza
+        únicamente en <code>commitHook</code>, en el orden en que se llaman los hooks.
+      </p>
+      <div class="callout warn">
+        <span class="tag">Cuidado</span>
+        <p>
+          Por eso <code>useState</code> no puede llamarse dentro de un <code>if</code> o un bucle: si
+          en un render se saltara una llamada, todos los índices siguientes se desalinearían y cada
+          hook recuperaría el estado equivocado. El orden de las llamadas <em>es</em> la identidad de
+          cada hook.
+        </p>
+      </div>
+
+      <h2>Diagrama de secuencia</h2>
+      <div class="diagram">MOUNT
+  updateFunctionComponent: R.wipFiber = fiber, R.hookIndex = 0, fiber.hooks = []
+  useState(0)
+    slot() -&gt; old = undefined  (no hay alternate)
+    crea StateHook { tag:'state', state:0, queue:[], dispatch:null }
+    crea dispatch estable + fiberRef.current = fiber
+    commitHook -&gt; hooks.push, hookIndex++
+  return [0, dispatch]
+        |
+        v
+DISPATCH  setN(c =&gt; c + 1)
+  queue.push(c =&gt; c + 1)
+  target = fiberRef.current   (fiber vigente)
+  target.hasPendingUpdate = true
+  scheduleUpdate(target) -&gt; dirtyFibers.add, ensureFlush (microtask / flushSync)
+        |
+        v
+UPDATE  (nuevo render del mismo fiber)
+  slot() -&gt; old = alternate.hooks[hookIndex]  (MISMO StateHook)
+  aplica queue: state = (c =&gt; c + 1)(0) = 1 ; queue.length = 0
+  dispatch ya existe (identidad estable) ; fiberRef.current = fiber nuevo
+  commitHook -&gt; hookIndex++
+  return [1, dispatch]  -&gt; commit escribe el DOM</div>
+
+      <div class="pager">
+        <a href="29-testing-jest.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Testing con Jest</div>
+        </a>
+        <a class="next" href="31-hook-usereducer.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">useReducer — ciclo de vida</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

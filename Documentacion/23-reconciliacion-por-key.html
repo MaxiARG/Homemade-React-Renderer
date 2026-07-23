@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reconciliación por key · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a class="active" href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Identidad estable</p>
+      <h1>Reconciliación por key</h1>
+      <p class="lead">
+        El diffing por posición del capítulo <a href="12-reconciliacion.html">12</a> era barato pero
+        frágil ante reordenamientos. El motor refactorizado empareja los hijos por <code>key</code>,
+        detecta cuáles se movieron y reusa sus fibers, preservando estado y nodos del DOM.
+      </p>
+
+      <h2>El algoritmo en <code>reconcileChildren</code></h2>
+      <p>
+        Toda la lógica vive en <code>reconcileChildren</code> dentro de
+        <code>src/react/reconciler.ts</code>. El punto de partida es construir un <em>Map</em> de los
+        fibers viejos (los hijos del <code>alternate</code> del padre) indexados por su
+        <code>key</code> o, cuando no la tienen, por su índice de posición.
+      </p>
+
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>export function reconcileChildren(returnFiber: Fiber, elements: ReactElement[]): void {
+  const root = returnFiber.root as RootStateContainer;
+  const deletions = root.deletions;
+
+  // Mapa de fibers viejos por key (o índice si no hay key).
+  const existing = new Map&lt;Key | number, Fiber&gt;();
+  let old = returnFiber.alternate ? returnFiber.alternate.child : null;
+  let oldIdx = 0;
+  while (old) {
+    const k = old.key != null ? old.key : oldIdx;
+    existing.set(k, old);
+    old.index = oldIdx;
+    old = old.sibling;
+    oldIdx++;
+  }
+
+  let prevSibling: Fiber | null = null;
+  let lastPlacedIndex = 0;
+
+  for (let i = 0; i &lt; elements.length; i++) {
+    const element = elements[i];
+    const k: Key | number = element.key != null ? element.key : i;
+    const matched = existing.get(k);
+    let fiber: Fiber;
+
+    if (matched &amp;&amp; sameType(matched, element)) {
+      // Reusar (posiblemente moviendo).
+      fiber = createWorkInProgress(matched, element.props);
+      fiber.effectTag = 'UPDATE';
+      existing.delete(k);
+      if (matched.index &lt; lastPlacedIndex) {
+        fiber.moved = true; // se movió a la derecha: reinsertar en el DOM
+      } else {
+        lastPlacedIndex = matched.index;
+      }
+    } else {
+      if (matched) {
+        // misma key, distinto tipo =&gt; borrar el viejo
+        matched.effectTag = 'DELETION';
+        deletions.push(matched);
+        existing.delete(k);
+      }
+      fiber = createFiberFromElement(element);
+      fiber.effectTag = 'PLACEMENT';
+    }
+
+    fiber.parent = returnFiber;
+    fiber.root = root;
+    fiber.index = i;
+
+    if (i === 0) returnFiber.child = fiber;
+    else if (prevSibling) prevSibling.sibling = fiber;
+    prevSibling = fiber;
+  }
+
+  // Los que sobraron en el mapa se eliminan.
+  for (const fiber of existing.values()) {
+    fiber.effectTag = 'DELETION';
+    deletions.push(fiber);
+  }
+}</code></pre>
+
+      <h2>Emparejar por key, no por posición</h2>
+      <p>
+        Para cada elemento nuevo se calcula su clave <code>k</code> (la <code>key</code> del elemento
+        o su índice) y se busca en el <code>Map</code> <code>existing</code>. Si aparece un fiber viejo
+        con esa misma clave y además <code>sameType</code> confirma que el <code>type</code> coincide,
+        el fiber viejo se <em>reusa</em>. La reutilización pasa por
+        <code>createWorkInProgress(matched, element.props)</code> (véase
+        <a href="24-doble-buffer.html">24 · Doble buffer</a>), que hereda el <code>dom</code>, el
+        <code>stateNode</code> y los <code>hooks</code> del fiber previo. Esa herencia es exactamente
+        lo que preserva el estado y el nodo real cuando la lista se reordena.
+      </p>
+
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>function sameType(a: Fiber, b: ReactElement): boolean {
+  return a.type === b.type;
+}</code></pre>
+
+      <p>
+        Si la clave existe pero el tipo cambió (misma <code>key</code>, distinto componente), el fiber
+        viejo se marca <code>DELETION</code> y se crea uno nuevo con <code>PLACEMENT</code>. Si la clave
+        no existía, es un elemento nuevo: <code>createFiberFromElement</code> + <code>PLACEMENT</code>.
+        Al final, cualquier fiber que quedó en <code>existing</code> (nadie lo reclamó) se elimina.
+      </p>
+
+      <h2>Detectar movimientos con <code>lastPlacedIndex</code></h2>
+      <p>
+        Reusar un fiber no significa que su posición en el DOM siga siendo correcta. El motor usa la
+        misma heurística que React: recorre los elementos nuevos de izquierda a derecha y lleva un
+        <code>lastPlacedIndex</code>, que es el mayor índice antiguo ya "colocado". Para cada fiber
+        reusado compara <code>matched.index</code> (su posición en el árbol viejo) contra ese umbral:
+      </p>
+      <ul>
+        <li>Si <code>matched.index &lt; lastPlacedIndex</code>: el elemento estaba <em>antes</em> de algo
+        que ahora quedó a su izquierda, o sea que en el orden nuevo se corrió a la derecha. Se marca
+        <code>fiber.moved = true</code> para reinsertarlo en el commit.</li>
+        <li>Si no, este elemento ya estaba en orden creciente: se avanza
+        <code>lastPlacedIndex = matched.index</code> y <em>no</em> se mueve.</li>
+      </ul>
+      <p>
+        La idea es minimizar operaciones sobre el DOM: solo se reubican los elementos estrictamente
+        necesarios para reconstruir el orden, dejando quietos a los que ya forman una subsecuencia
+        creciente.
+      </p>
+
+      <h2>Ejemplo: [a, b, c] → [c, a, b]</h2>
+      <p>
+        Supongamos tres hijos con keys <code>a</code>, <code>b</code>, <code>c</code> en índices viejos
+        0, 1 y 2. El nuevo orden pedido es <code>c, a, b</code>. El recorrido decide así:
+      </p>
+
+      <div class="diagram">viejo:   [ a(0)  b(1)  c(2) ]
+nuevo:   [ c     a     b    ]
+
+paso i=0  key=c  matched.index=2   2 &lt; lastPlacedIndex(0)?  no  -&gt; lastPlacedIndex=2
+paso i=1  key=a  matched.index=0   0 &lt; lastPlacedIndex(2)?  SI  -&gt; a.moved = true
+paso i=2  key=b  matched.index=1   1 &lt; lastPlacedIndex(2)?  SI  -&gt; b.moved = true
+
+resultado: c queda fijo (ancla);  a y b se reinsertan con insertBefore</div>
+
+      <p>
+        Observá que se marcan como movidos <code>a</code> y <code>b</code>, no <code>c</code>. Es
+        contraintuitivo (uno "siente" que fue <code>c</code> el que se movió al frente), pero el
+        algoritmo elige el mínimo de reinserciones tomando a <code>c</code> como ancla y arrastrando el
+        resto detrás. Ninguno de los tres fibers se recrea: los tres conservan su DOM y su estado.
+      </p>
+
+      <h2>Cómo el commit ejecuta el reorden</h2>
+      <p>
+        La fase de render solo <em>marca</em> banderas (<code>moved</code>, <code>PLACEMENT</code>). Es
+        el commit el que toca el DOM. En <code>commitWork</code>, un fiber con <code>UPDATE</code> que
+        además tiene <code>moved</code> dispara <code>commitPlacement</code>:
+      </p>
+
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>function commitWork(fiber: Fiber | null): void {
+  if (!fiber) return;
+  if (fiber.effectTag === 'PLACEMENT') {
+    commitPlacement(fiber);
+  } else if (fiber.effectTag === 'UPDATE') {
+    if (fiber.dom &amp;&amp; fiber.alternate) {
+      updateDom(fiber.dom, fiber.alternate.props, fiber.props);
+    }
+    if (fiber.moved) commitPlacement(fiber);
+  }
+  commitWork(fiber.child);
+  commitWork(fiber.sibling);
+}</code></pre>
+
+      <p>
+        <code>commitPlacement</code> resuelve el DOM padre y luego llama a <code>getHostSibling</code>
+        para encontrar el nodo <em>ante el cual</em> insertar, respetando el orden final. Ese "sibling"
+        salta fibers que a su vez están en <code>PLACEMENT</code> o <code>moved</code> (todavía no están
+        en su lugar) hasta hallar un nodo host estable que sirva de referencia. Con esa referencia,
+        <code>placeNode</code> usa <code>insertBefore</code> (o <code>appendChild</code> si no hay
+        referencia):
+      </p>
+
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>function commitPlacement(fiber: Fiber): void {
+  const parentDom = getHostParentDom(fiber);
+  const before = getHostSibling(fiber);
+  placeNode(fiber, parentDom, before);
+}
+
+function placeNode(fiber: Fiber, parentDom: DomNode, before: DomNode | null): void {
+  if (isHostType(fiber)) {
+    if (fiber.dom) {
+      if (before) parentDom.insertBefore(fiber.dom, before);
+      else parentDom.appendChild(fiber.dom);
+    }
+  } else {
+    // Fragment / función / clase: colocar sus hijos host.
+    let child = fiber.child;
+    while (child) {
+      placeNode(child, parentDom, before);
+      child = child.sibling;
+    }
+  }
+}</code></pre>
+
+      <p>
+        Como el mismo nodo del DOM se reinserta (no se recrea), un <code>&lt;input&gt;</code> con foco o
+        un video reproduciéndose sobrevive al reorden. Esa es la diferencia práctica frente al matching
+        por posición del <a href="12-reconciliacion.html">capítulo 12</a>, donde reordenar mutaba
+        props sobre nodos ajenos y perdía estado.
+      </p>
+
+      <h2>Por qué las keys preservan estado</h2>
+      <table>
+        <thead>
+          <tr><th>Estrategia</th><th>Al pasar de [a,b,c] a [c,a,b]</th><th>Consecuencia</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Matching por posición (doc 12)</td>
+            <td>El fiber del slot 0 (antes <code>a</code>) se reusa para <code>c</code>: se sobrescriben
+            sus props.</td>
+            <td>El estado interno y el DOM quedan asociados a la <em>posición</em>, no al elemento
+            lógico. Se corrompen los hooks.</td>
+          </tr>
+          <tr>
+            <td>Matching por key (doc actual)</td>
+            <td>El fiber de <code>a</code> se empareja con el elemento <code>a</code> por su
+            <code>key</code>, sin importar el slot.</td>
+            <td>El estado y el DOM viajan con la identidad lógica del elemento. Solo se reinserta el
+            nodo si hace falta.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout warn">
+        <span class="tag">Limitación conocida</span>
+        <p>
+          La detección de movimientos opera a nivel de <em>elementos host</em>. Reordenar un subárbol
+          envuelto en un componente función o clase se resuelve correctamente en cuanto a los nodos
+          del DOM finales — <code>getHostSibling</code> y <code>placeNode</code> descienden hasta los
+          hijos host y los reinsertan en orden. Pero el motor no tiene un tratamiento especial para
+          "mover un componente entero" como una unidad indivisible: la corrección emerge de reubicar
+          sus nodos host uno a uno. En árboles muy anidados con muchos wrappers, esto puede producir
+          más operaciones <code>insertBefore</code> de las mínimas teóricas.
+        </p>
+      </div>
+
+      <div class="callout ok">
+        <span class="tag">Regla práctica</span>
+        <p>
+          Poné <code>key</code> estables y únicos (nunca el índice del array si la lista se reordena o
+          filtra). La key es el contrato de identidad entre renders: sin ella, el motor cae al
+          emparejamiento por posición y pierde las garantías descritas acá.
+        </p>
+      </div>
+
+      <div class="pager">
+        <a href="22-tipado-completo.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Tipado completo</div>
+        </a>
+        <a class="next" href="24-doble-buffer.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Doble buffer</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

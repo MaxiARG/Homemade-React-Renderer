@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recorrido del árbol de fibers · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a class="active" href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Encontrar el próximo trabajo</p>
+      <h1>Recorrido del árbol de fibers</h1>
+      <p class="lead">
+        Procesar un fiber implica una pregunta constante: ¿cuál es la siguiente unidad de
+        trabajo? La respuesta se resuelve siguiendo tres enlaces —child, sibling y parent—
+        en un orden preciso que recorre todo el árbol en profundidad sin recursión.
+      </p>
+
+      <h2>El orden de recorrido</h2>
+      <p>
+        Al final de <code>performUnitOfWork</code>, después de procesar un fiber, el motor
+        busca el siguiente aplicando una regla de tres pasos, siempre en el mismo orden de
+        prioridad:
+      </p>
+      <ol class="steps">
+        <li><strong>Primero el hijo</strong> (<code>child</code>): si el fiber tiene hijos, el primero es la próxima unidad de trabajo.</li>
+        <li><strong>Luego el hermano</strong> (<code>sibling</code>): si no hay hijo, se pasa al siguiente hermano.</li>
+        <li><strong>Luego el «tío»</strong>: si tampoco hay hermano, se sube al <code>parent</code> y se prueba con <em>su</em> hermano; se sigue subiendo por los padres hasta encontrar un hermano o llegar a la raíz.</li>
+      </ol>
+      <p>
+        El código lo expresa de forma directa. Primero intenta con el hijo; si no existe,
+        entra en un bucle <code>while</code> que sube por los padres buscando un hermano:
+      </p>
+
+      <div class="filename">src/React.ts — performUnitOfWork</div>
+      <pre><code>// Return  next unit of work
+// We first try with the child, then with the sibling, then with the uncle, and so on.
+if (fiber.child) {
+  return fiber.child
+}
+let nextFiber = fiber
+while (nextFiber) {
+  if (nextFiber.sibling) {
+    return nextFiber.sibling
+  }
+  nextFiber = nextFiber.parent
+}</code></pre>
+
+      <p>
+        Ese <code>while</code> es la clave del «tío». Cuando un fiber no tiene ni hijo ni
+        hermano, <code>nextFiber</code> asciende al padre; si el padre tampoco tiene hermano,
+        sube al abuelo, y así sucesivamente. Si el bucle llega hasta un fiber sin padre
+        (la raíz), <code>nextFiber</code> pasa a ser <code>null</code>, la función termina
+        sin devolver nada y el motor entiende que ya no queda trabajo: el render está
+        completo.
+      </p>
+
+      <div class="callout info">
+        <span class="tag">Nota</span>
+        <p>
+          Este mismo patrón de recorrido —<code>child</code> primero, luego
+          <code>sibling</code>— se repite en <code>commitWork</code> durante la fase de
+          <a href="14-commit-phase.html">commit</a>, allí sí de forma recursiva porque el
+          commit no necesita ser interrumpible.
+        </p>
+      </div>
+
+      <h2>Cómo se construyen los enlaces: reconcileChildren</h2>
+      <p>
+        El recorrido solo funciona si los enlaces <code>child</code> y <code>sibling</code>
+        están correctamente tejidos. Quien los teje es <code>reconcileChildren</code>,
+        recorriendo los elementos hijos y armando una <strong>lista enlazada</strong>: el
+        primer hijo (<code>index === 0</code>) se cuelga del padre como <code>child</code>,
+        y cada hijo posterior se engancha al anterior mediante <code>sibling</code>.
+      </p>
+
+      <div class="filename">src/React.ts — reconcileChildren</div>
+      <pre><code>if (index === 0) {
+  wipFiber.child = newFiber
+} else if (element) {
+  prevSibling.sibling = newFiber
+}
+// Think of this as a double linked list!
+prevSibling = newFiber
+index++</code></pre>
+
+      <p>
+        La variable <code>prevSibling</code> recuerda el último fiber creado para poder
+        enlazarle el siguiente. Cada <code>newFiber</code> también recibe
+        <code>parent: wipFiber</code>, cerrando el enlace hacia arriba que el bucle del
+        «tío» necesita para ascender. El resultado es una estructura donde, desde cualquier
+        nodo, se puede alcanzar a todo el árbol siguiendo punteros explícitos.
+      </p>
+
+      <div class="callout bug">
+        <span class="tag">Bug corregido</span>
+        <p>
+          Si un hijo intermedio quedaba <code>null</code> (por ejemplo con
+          <code>{condicion &amp;&amp; &lt;Componente/&gt;}</code>), se abría un «hueco» en el array y
+          <code>prevSibling.sibling</code> se ejecutaba con <code>prevSibling === null</code>,
+          lanzando una excepción. Se corrigió filtrando los hijos falsy en
+          <a href="06-createelement-y-flattening.html">createElement</a> con
+          <code>.filter((child) =&gt; child != null &amp;&amp; typeof child !== 'boolean')</code>.
+        </p>
+      </div>
+
+      <h2>Orden de visita en un árbol concreto</h2>
+      <p>
+        Consideremos el árbol <code>div &gt; h1 &gt; (p, a)</code> más un <code>h2</code>
+        hermano de <code>h1</code>. El recorrido en profundidad numera las visitas así:
+      </p>
+
+      <div class="diagram">
+                          ┌───────────┐
+                          │  1. div    │
+                          └─────┬─────┘
+                       child    │
+                                ▼
+                          ┌───────────┐   sibling   ┌───────────┐
+                          │  2. h1     │ ──────────▶ │  5. h2     │
+                          └─────┬─────┘             └───────────┘
+                       child    │
+                                ▼
+                          ┌───────────┐   sibling   ┌───────────┐
+                          │  3. p      │ ──────────▶ │  4. a      │
+                          └───────────┘             └───────────┘
+
+        1 div   → tiene child            → va a h1
+        2 h1    → tiene child            → va a p
+        3 p     → sin child, tiene sibling → va a a
+        4 a     → sin child ni sibling   → sube a h1, h1 tiene sibling → va a h2
+        5 h2    → sin child ni sibling   → sube a div, div sin sibling → sube a raíz → FIN
+      </div>
+
+      <p>
+        El paso interesante es el de <code>a</code> (nodo 4): no tiene hijo ni hermano, así
+        que el bucle sube a su padre <code>h1</code>, que <em>sí</em> tiene un hermano
+        (<code>h2</code>). Ese es el «tío» de <code>a</code>. Luego <code>h2</code> tampoco
+        tiene hijo ni hermano; el bucle sube a <code>div</code>, que no tiene hermano, y
+        sigue subiendo hasta agotar los padres: el render termina.
+      </p>
+
+      <h2>Por qué esta estructura permite pausar y retomar</h2>
+      <p>
+        Un recorrido recursivo tradicional guarda su posición en la <strong>pila de llamadas
+        del navegador</strong>: cada nivel de anidamiento es un marco en la pila que no se
+        puede «congelar» ni serializar. Una vez iniciada la recursión, no se puede
+        interrumpir sin perder el punto exacto en el que se estaba.
+      </p>
+      <p>
+        Aquí, en cambio, la posición del recorrido es un simple dato: el valor de
+        <code>nextUnitOfWork</code>. Como cada fiber lleva enlaces explícitos a su
+        <code>child</code>, <code>sibling</code> y <code>parent</code>, el motor puede
+        detenerse tras procesar cualquier fiber, guardar en esa variable cuál sigue, ceder
+        el hilo al navegador, y más tarde retomar exactamente donde quedó. No hay estado
+        oculto en la pila: todo el «dónde estoy» vive en enlaces de objetos que persisten
+        entre frames.
+      </p>
+
+      <div class="callout ok">
+        <span class="tag">Idea clave</span>
+        <p>
+          Convertir la recursión en una lista enlazada explícita transforma «el navegador
+          recuerda dónde voy» en «yo recuerdo dónde voy con una variable». Eso es
+          precisamente lo que habilita el <a href="10-scheduler-workloop.html">scheduler
+          cooperativo</a> del siguiente capítulo.
+        </p>
+      </div>
+
+      <div class="pager">
+        <a href="08-estructura-fiber.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">La estructura Fiber</div>
+        </a>
+        <a class="next" href="10-scheduler-workloop.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Scheduler y workLoop</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

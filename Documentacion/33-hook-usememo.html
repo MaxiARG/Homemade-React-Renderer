@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>useMemo — ciclo de vida completo · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a class="active" href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Valor cacheado</p>
+      <h1>useMemo — ciclo de vida completo</h1>
+      <p class="lead">
+        <code>useMemo</code> memoiza el resultado de un cálculo: guarda un valor y las
+        dependencias con las que se produjo, y solo lo recalcula cuando esas dependencias
+        cambian. No agenda re-renders; es puramente una optimización de trabajo <em>durante</em>
+        el render.
+      </p>
+
+      <h2>Firma y para qué sirve</h2>
+      <p>
+        La firma real en <code>src/react/hooks.ts</code> es
+        <code>useMemo&lt;T&gt;(factory: () =&gt; T, deps: unknown[] | undefined): T</code>.
+        Recibe una función <em>fábrica</em> que produce el valor y un arreglo de dependencias.
+        Devuelve el valor cacheado mientras las dependencias no cambien.
+      </p>
+      <div class="filename">uso mínimo</div>
+      <pre><code>function Lista({ items, filtro }) {
+  // Solo re-filtra cuando `items` o `filtro` cambian de identidad.
+  const visibles = useMemo(
+    () =&gt; items.filter((it) =&gt; it.includes(filtro)),
+    [items, filtro],
+  );
+  return h('ul', null, ...visibles.map((t) =&gt; h('li', null, t)));
+}</code></pre>
+      <p>
+        Se usa para evitar recomputar resultados costosos en cada render, o para estabilizar la
+        <em>identidad</em> de un objeto/arreglo que se pasa como prop a un hijo envuelto en
+        <a href="25-bailout-y-memo.html">memo</a> (si el objeto se recrea en cada render,
+        el hijo nunca puede hacer bailout).
+      </p>
+
+      <h2>Dónde vive el estado</h2>
+      <p>
+        El estado del hook es un objeto <code>MemoHook</code>, un miembro de la unión discriminada
+        <code>Hook</code> en <code>src/react/types.ts</code>:
+      </p>
+      <div class="filename">src/react/types.ts</div>
+      <pre><code>export interface MemoHook&lt;T = unknown&gt; {
+  tag: 'memo';
+  value: T;                       // el valor cacheado
+  deps: unknown[] | undefined;    // las deps con las que se produjo
+}</code></pre>
+      <p>
+        Ese objeto <strong>persiste entre renders</strong> gracias al modelo de hooks persistentes:
+        cada componente función guarda su arreglo <code>hooks</code> en el fiber, y en el próximo
+        render el hook viejo se recupera desde <code>wipFiber.alternate.hooks[hookIndex]</code>.
+        Así, el <code>value</code> y las <code>deps</code> del render anterior siguen disponibles
+        para comparar.
+      </p>
+
+      <h2>Primer render (mount)</h2>
+      <p>
+        En el montaje no existe hook anterior, así que <code>old</code> es <code>undefined</code> y
+        la fábrica se ejecuta sí o sí. Veamos el cuerpo completo:
+      </p>
+      <div class="filename">src/react/hooks.ts</div>
+      <pre><code>export function useMemo&lt;T&gt;(factory: () =&gt; T, deps: unknown[] | undefined): T {
+  const { fiber, old } = slot();
+  const oldMemo = old as MemoHook&lt;T&gt; | undefined;
+
+  let hook: MemoHook&lt;T&gt;;
+  if (oldMemo &amp;&amp; deps &amp;&amp; depsEqual(deps, oldMemo.deps)) {
+    hook = oldMemo; // deps iguales: reusar el valor cacheado
+  } else {
+    hook = { tag: 'memo', value: factory(), deps };
+  }
+  commitHook(fiber, hook as unknown as Hook);
+  return hook.value;
+}</code></pre>
+      <ol class="steps">
+        <li><code>slot()</code> lee <code>R.wipFiber</code> y devuelve <code>old = fiber.alternate?.hooks?.[R.hookIndex]</code>; en el mount es <code>undefined</code>.</li>
+        <li>Como <code>oldMemo</code> no existe, se cae al <code>else</code>: se ejecuta <code>factory()</code> y se crea el objeto <code>{ tag: 'memo', value, deps }</code>.</li>
+        <li><code>commitHook</code> empuja el hook a <code>fiber.hooks</code> y hace <code>R.hookIndex++</code>.</li>
+        <li>Se devuelve <code>hook.value</code>.</li>
+      </ol>
+
+      <h2>Renders siguientes (update)</h2>
+      <p>
+        En el re-render, <code>slot()</code> recupera el <code>MemoHook</code> anterior. La decisión
+        de reusar o recomputar depende de <code>depsEqual</code>, que compara elemento a elemento
+        con <code>Object.is</code>:
+      </p>
+      <div class="filename">src/react/hooks.ts</div>
+      <pre><code>function depsEqual(a: unknown[] | undefined, b: unknown[] | undefined): boolean {
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i &lt; a.length; i++) {
+    if (!Object.is(a[i], b[i])) return false;
+  }
+  return true;
+}</code></pre>
+      <table>
+        <thead><tr><th>Situación</th><th>Resultado</th></tr></thead>
+        <tbody>
+          <tr><td><code>oldMemo</code> existe y <code>depsEqual(deps, oldMemo.deps)</code> es <code>true</code></td><td><code>hook = oldMemo</code>: se reusa el valor, la fábrica <strong>no</strong> corre.</td></tr>
+          <tr><td>Alguna dep cambió (<code>Object.is</code> falso)</td><td>Se crea un hook nuevo con <code>value: factory()</code>: recomputo.</td></tr>
+          <tr><td><code>deps</code> es <code>undefined</code></td><td><code>depsEqual</code> devuelve <code>false</code>: recomputa en cada render (sin memoización efectiva).</td></tr>
+        </tbody>
+      </table>
+      <div class="callout warn">
+        <span class="tag">Object.is, no igualdad profunda</span>
+        <p>
+          La comparación es <em>superficial y referencial</em>. Si una dep es un objeto o arreglo
+          recreado en cada render (<code>{}</code>, <code>[]</code>, una función literal),
+          <code>Object.is</code> siempre da falso y <code>useMemo</code> recomputa siempre. Para que
+          la memoización sirva, las deps tienen que ser valores estables (primitivos, o referencias
+          que a su vez estén memoizadas).
+        </p>
+      </div>
+
+      <h2>La actualización / disparador</h2>
+      <p>
+        <code>useMemo</code> <strong>no tiene disparador propio</strong>: no expone ningún
+        <code>dispatch</code>, no encola nada en una <code>queue</code> y nunca llama a
+        <code>scheduleUpdate</code>. No puede provocar un re-render por sí mismo. Lo que lo hace
+        recalcular es, exclusivamente, que <em>otro</em> hook (típicamente un <code>useState</code>)
+        dispare un re-render y que, en ese nuevo render, alguna de sus <code>deps</code> haya
+        cambiado de identidad. En otras palabras: <code>useMemo</code> es un pasajero del ciclo de
+        render, nunca su conductor.
+      </p>
+
+      <h2>Orden de ejecución</h2>
+      <p>
+        El chequeo de deps y la eventual ejecución de <code>factory()</code> ocurren
+        <strong>en línea, durante el render</strong>, en el momento exacto en que el cuerpo del
+        componente invoca <code>useMemo</code>. Esto lo distingue de <a href="35-hook-useeffect.html">useEffect</a>,
+        que difiere su trabajo hasta después del commit del DOM. Por eso la fábrica de
+        <code>useMemo</code> debe ser pura y sin efectos secundarios: corre en plena fase de render,
+        antes de que <code>reconcileChildren</code> procese la salida.
+      </p>
+
+      <h2>Reglas de los hooks</h2>
+      <p>
+        Como todos los hooks, <code>useMemo</code> se identifica por su <strong>posición</strong>:
+        <code>slot()</code> lee <code>fiber.alternate.hooks[R.hookIndex]</code> y
+        <code>commitHook</code> incrementa <code>R.hookIndex</code>. Si llamaras a
+        <code>useMemo</code> condicionalmente, el índice se desalinearía y en el próximo render
+        recuperarías el hook de <em>otra</em> posición: por ejemplo el <code>MemoHook</code> podría
+        chocar contra un <code>StateHook</code>. De ahí la regla de oro: los hooks se llaman siempre,
+        en el mismo orden, en el nivel superior del componente.
+      </p>
+
+      <div class="callout ok">
+        <span class="tag">Test que lo fija</span>
+        <p>
+          El test <em>"useMemo recalcula solo cuando cambian deps"</em> monta un componente con
+          <code>useMemo(() =&gt; { computes++; return a * 2; }, [a])</code>. Tras el mount
+          <code>computes</code> vale <code>1</code>; un <code>setB(1)</code> (que no toca
+          <code>a</code>) lo deja en <code>1</code>; recién un <code>setA(1)</code> lo lleva a
+          <code>2</code>. Demuestra que la fábrica solo corre cuando la dep <code>[a]</code> cambia.
+        </p>
+      </div>
+
+      <h2>Diagrama de secuencia</h2>
+      <div class="diagram">
+  MOUNT (a=0, b=0)
+    useMemo(factory, [0])
+      old = undefined  ──►  factory() corre  ──►  value = 0, deps = [0]
+      computes = 1
+
+  UPDATE por setB(1)   (a=0, b=1)   ── re-render del componente
+    useMemo(factory, [0])
+      old.deps = [0], deps = [0]  ──►  depsEqual = true
+      hook = oldMemo  ──►  factory() NO corre        computes = 1  (sin cambios)
+
+  UPDATE por setA(1)   (a=1, b=1)   ── re-render del componente
+    useMemo(factory, [1])
+      old.deps = [0], deps = [1]  ──►  Object.is(0,1) = false  ──►  depsEqual = false
+      value = factory() = 2       ──►  computes = 2
+
+  (En ningún caso useMemo agenda el re-render: lo dispara setState.)
+      </div>
+
+      <div class="pager">
+        <a href="32-hook-useref.html"><div class="dir">← Anterior</div><div class="lbl">useRef — ciclo de vida</div></a>
+        <a class="next" href="34-hook-usecallback.html"><div class="dir">Siguiente →</div><div class="lbl">useCallback — ciclo de vida</div></a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

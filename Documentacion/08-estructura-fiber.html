@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>La estructura Fiber · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a class="active" href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">La unidad de trabajo</p>
+      <h1>La estructura Fiber</h1>
+      <p class="lead">
+        Un <em>fiber</em> es el nodo que el motor procesa de a uno por vez: contiene la
+        descripción del elemento, su nodo del DOM y los enlaces que permiten recorrer,
+        pausar y reconciliar el árbol. Es el corazón del renderizado interrumpible.
+      </p>
+
+      <h2>¿Qué es un fiber?</h2>
+      <p>
+        Cada elemento que queremos mostrar en pantalla se convierte, durante la fase de
+        render, en un <strong>fiber</strong>: un objeto JavaScript que representa una
+        <strong>unidad de trabajo</strong>. Mientras un <a href="05-jsx-y-pragma.html">Element</a>
+        es solo una descripción estática de lo que quieres renderizar, el fiber es la
+        estructura viva que el motor recorre para <em>hacer</em> ese trabajo. El objetivo
+        de esta estructura de datos es, en palabras del propio proyecto, «make it easy to
+        find the next unit of work»: por eso cada fiber tiene un enlace a su primer hijo,
+        a su siguiente hermano y a su padre.
+      </p>
+      <p>
+        En este clon los fibers no se declaran con una clase ni con un constructor: se
+        crean como objetos literales dentro de <code>reconcileChildren</code> y de
+        <code>render</code>. Las propiedades que realmente se usan en <code>src/React.ts</code>
+        son: <code>type</code>, <code>props</code>, <code>dom</code>, <code>parent</code>,
+        <code>child</code>, <code>sibling</code>, <code>alternate</code>,
+        <code>effectTag</code> y —para componentes de función— <code>hooks</code>.
+      </p>
+
+      <table>
+        <thead>
+          <tr><th>Propiedad</th><th>Rol dentro del motor</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>type</code></td><td>La etiqueta (<code>"div"</code>, <code>"TEXT_ONLY"</code>) o la función del componente. Determina si es host o function component.</td></tr>
+          <tr><td><code>props</code></td><td>Los atributos y <code>children</code> del elemento asociado.</td></tr>
+          <tr><td><code>dom</code></td><td>El nodo real del DOM (<code>HTMLElement</code> o <code>Text</code>). Es <code>null</code> en componentes de función.</td></tr>
+          <tr><td><code>parent</code></td><td>Enlace hacia arriba, al fiber contenedor.</td></tr>
+          <tr><td><code>child</code></td><td>Enlace al primer hijo.</td></tr>
+          <tr><td><code>sibling</code></td><td>Enlace al siguiente hermano.</td></tr>
+          <tr><td><code>alternate</code></td><td>Enlace al fiber viejo (el del árbol previo ya committeado).</td></tr>
+          <tr><td><code>effectTag</code></td><td>Marca <code>"PLACEMENT"</code>, <code>"UPDATE"</code> o <code>"DELETION"</code> para la fase de commit.</td></tr>
+          <tr><td><code>hooks</code></td><td>Array de hooks del componente de función (estado de <code>useState</code>/<code>useEffect</code>).</td></tr>
+        </tbody>
+      </table>
+
+      <h2>El tipo <code>Fiber</code> en el código</h2>
+      <p>
+        El proyecto declara un tipo <code>Fiber</code> en <code>src/types/index.ts</code>. Vale
+        la pena notar que está anotado como «aún no implementada»: sirve como documentación
+        del contrato, pero el motor construye los fibers como objetos literales sin referirse
+        a este tipo. Aun así, describe fielmente los enlaces que sí se usan.
+      </p>
+
+      <div class="filename">src/types/index.ts</div>
+      <pre><code>// aun no implementada
+export type Fiber = {
+    type: string | FunctionComponent;
+    props: Props;
+    dom: HTMLElement | Text | null;
+    parent?: Fiber;
+    child?: Fiber;
+    sibling?: Fiber;
+    alternate?: Fiber;
+    effectTag?: "PLACEMENT" | "UPDATE" | "DELETION";
+};</code></pre>
+
+      <div class="callout info">
+        <span class="tag">Nota</span>
+        <p>
+          El tipo no incluye <code>hooks</code>, pero el motor sí lo agrega en tiempo de
+          ejecución dentro de <code>updateFunctionComponent</code> con
+          <code>wipFiber.hooks = []</code>. Es un ejemplo de cómo el objeto real supera al
+          tipo declarado.
+        </p>
+      </div>
+
+      <h2>Element vs Fiber</h2>
+      <p>
+        La distinción es fundamental. Un <strong>Element</strong> es una descripción
+        <em>inmutable</em>: el objeto plano <code>{ type, props }</code> que devuelve
+        <code>createElement</code>. No sabe nada del DOM, no tiene enlaces a hermanos ni a
+        padres, y no guarda estado. Es solo «lo que queremos ver».
+      </p>
+      <p>
+        Un <strong>Fiber</strong>, en cambio, es la <em>unidad de trabajo</em> que envuelve
+        a ese element. Añade lo que el element no tiene: un enlace a su nodo del DOM
+        (<code>dom</code>), enlaces estructurales (<code>parent</code>, <code>child</code>,
+        <code>sibling</code>) para recorrer el árbol sin recursión, un enlace al pasado
+        (<code>alternate</code>) para comparar, una etiqueta de efecto
+        (<code>effectTag</code>) para el commit, y —si es un componente— su estado en
+        <code>hooks</code>. En <code>reconcileChildren</code> se ve cómo un element se
+        transforma en fiber copiando <code>element.props</code> pero agregando todos esos
+        enlaces:
+      </p>
+
+      <div class="filename">src/React.ts — reconcileChildren</div>
+      <pre><code>newFiber = {
+  type: oldFiber.type,
+  props: element.props,
+  dom: oldFiber.dom,
+  parent: wipFiber,
+  alternate: oldFiber,
+  effectTag: "UPDATE",
+}</code></pre>
+
+      <h2>alternate, wipRoot y currentRoot</h2>
+      <p>
+        La propiedad <code>alternate</code> es el enlace de cada fiber a «su versión
+        anterior»: el fiber que se committeó al DOM en el render previo. Gracias a ella el
+        motor puede comparar el árbol nuevo con el viejo y decidir qué cambió, en lugar de
+        recrear todo a ciegas. Toda la reconciliación de
+        <a href="12-reconciliacion.html">diffing</a> depende de recorrer
+        <code>wipFiber.alternate.child</code> en paralelo con los nuevos elements.
+      </p>
+      <p>
+        A nivel de árbol completo, el motor mantiene dos raíces globales:
+      </p>
+      <ol class="steps">
+        <li>
+          <code>wipRoot</code> (<em>work in progress root</em>): la raíz del árbol que se
+          está construyendo <strong>ahora</strong>, todavía no visible. Se crea en
+          <code>render</code> y en el <code>setState</code> de <code>useState</code>.
+        </li>
+        <li>
+          <code>currentRoot</code>: la raíz del último árbol ya committeado al DOM, es decir,
+          lo que el usuario ve en este instante.
+        </li>
+      </ol>
+      <p>
+        Cuando <code>render</code> arranca, enlaza ambos mundos con
+        <code>alternate: currentRoot</code>, de modo que el árbol nuevo «recuerda» al viejo:
+      </p>
+
+      <div class="filename">src/React.ts — render</div>
+      <pre><code>wipRoot = {
+  dom: container,
+  props: {
+    children: [element],
+  },
+  alternate: currentRoot
+}</code></pre>
+
+      <p>
+        Al terminar el commit, <code>commitRoot</code> hace <code>currentRoot = wipRoot</code>
+        y luego <code>wipRoot = null</code>: el árbol en progreso «se gradúa» y pasa a ser el
+        árbol actual, listo para servir de <code>alternate</code> en el próximo render.
+      </p>
+
+      <h2>Diagrama de un nodo fiber</h2>
+      <p>
+        Cada fiber apunta a su primer hijo (<code>child</code>), a su siguiente hermano
+        (<code>sibling</code>), hacia arriba a su padre (<code>parent</code>) y hacia el
+        pasado a su <code>alternate</code>:
+      </p>
+
+      <div class="diagram">
+          currentRoot (árbol viejo)          wipRoot (árbol nuevo)
+                 │                                  │
+                 ▼                                  ▼
+            ┌──────────┐      alternate       ┌──────────┐
+            │  &lt;div&gt;    │ ◀───────────────────│  &lt;div&gt;    │
+            │  fiber    │                      │  fiber    │
+            └──────────┘                      └────┬─────┘
+                                          parent ▲ │ child
+                                                 │ ▼
+                                            ┌──────────┐   sibling   ┌──────────┐
+                                            │  &lt;h1&gt;     │ ──────────▶ │  &lt;h2&gt;     │
+                                            │  fiber    │            │  fiber    │
+                                            └────┬─────┘            └──────────┘
+                                          child  │
+                                                 ▼
+                                            ┌──────────┐
+                                            │  &lt;p&gt;      │
+                                            │  fiber    │
+                                            └──────────┘
+
+        child   → primer hijo          sibling → siguiente hermano
+        parent  → contenedor           alternate → mismo nodo en el árbol previo
+      </div>
+
+      <div class="callout ok">
+        <span class="tag">Idea clave</span>
+        <p>
+          Un fiber es un element «con memoria y con cables»: recuerda su pasado mediante
+          <code>alternate</code> y se conecta a sus vecinos mediante <code>child</code>,
+          <code>sibling</code> y <code>parent</code>. Esos cables son lo que permite
+          recorrer el árbol sin usar la pila de llamadas del navegador, tema del
+          próximo capítulo.
+        </p>
+      </div>
+
+      <div class="pager">
+        <a href="07-nodos-de-texto.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Nodos de texto (TEXT_ONLY)</div>
+        </a>
+        <a class="next" href="09-recorrido-del-arbol.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Recorrido del árbol de fibers</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

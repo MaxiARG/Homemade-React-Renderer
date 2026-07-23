@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Diferencias con React y bugs corregidos · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a class="active" href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Honestidad de ingeniería</p>
+      <h1>Diferencias con React y bugs corregidos</h1>
+      <p class="lead">
+        Un clon didáctico vale tanto por lo que enseña como por lo que reconoce no ser.
+        Este capítulo enumera con franqueza dónde este motor se aparta de React real y
+        documenta los cuatro defectos concretos que el análisis del código sacó a la luz,
+        con su antes y su después.
+      </p>
+
+      <div class="callout ok">
+        <span class="tag">Actualización · Motor v2</span>
+        <p>
+          Varias de las diferencias que este capítulo describía como limitaciones
+          <strong>ya fueron implementadas</strong> en la reescritura del motor: reconciliación
+          por <code>key</code> (<a href="23-reconciliacion-por-key.html">cap. 23</a>), reciclado
+          de fibers con doble buffer (<a href="24-doble-buffer.html">cap. 24</a>), bailout de
+          subárboles sin cambios (<a href="25-bailout-y-memo.html">cap. 25</a>) y batching
+          (<a href="26-batching-flushsync.html">cap. 26</a>). Este capítulo se conserva como
+          registro histórico del punto de partida.
+        </p>
+      </div>
+
+      <h2>Dónde se aparta de React</h2>
+      <p>
+        Las siguientes simplificaciones son deliberadas: mantienen el motor legible a
+        costa de rendimiento o de funcionalidad. La mayoría están señaladas en el propio
+        <code>Readme.md</code> del proyecto.
+      </p>
+
+      <table>
+        <thead>
+          <tr><th>Aspecto</th><th>Este motor</th><th>React real</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Render phase</td>
+            <td>Recorre el árbol completo en cada render.</td>
+            <td>Usa heurísticas para saltar subárboles donde nada cambió.</td>
+          </tr>
+          <tr>
+            <td>Commit phase</td>
+            <td><code>commitWork</code> recorre todo el árbol de fibers.</td>
+            <td>Mantiene una lista enlazada de fibers con efectos y solo visita esos.</td>
+          </tr>
+          <tr>
+            <td>Reutilización de fibers</td>
+            <td>Recrea los fibers desde cero en cada pasada.</td>
+            <td>Recicla los fibers del árbol anterior.</td>
+          </tr>
+          <tr>
+            <td>Manejo de updates</td>
+            <td>Reinicia el trabajo desde cero cuando llega una actualización.</td>
+            <td>Prioriza con marcas de expiración (<em>expiration</em> / lanes).</td>
+          </tr>
+          <tr>
+            <td>Reconciliación por <code>key</code></td>
+            <td>No existe: compara solo por tipo y posición.</td>
+            <td>Usa <code>key</code> para detectar reordenamientos de hijos.</td>
+          </tr>
+          <tr>
+            <td>Cola de efectos</td>
+            <td><code>wipEffects</code> es una variable global compartida.</td>
+            <td>Cada componente mantiene su propia lista de efectos.</td>
+          </tr>
+          <tr>
+            <td><code>React.Fragment</code></td>
+            <td>Referenciado en la config de tipos, pero no implementado.</td>
+            <td>Permite agrupar hijos sin nodo DOM contenedor.</td>
+          </tr>
+          <tr>
+            <td>Memoización</td>
+            <td>Sin <code>useMemo</code>, <code>useCallback</code> ni <code>memo</code>.</td>
+            <td>Cachea valores y funciones para evitar recálculos y re-renders.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout info">
+        <span class="tag">Nota</span>
+        <p>
+          Que el motor recorra todo el árbol tanto en render como en commit no lo hace
+          incorrecto, solo menos eficiente. Con árboles pequeños el resultado visible es
+          idéntico al de React; la diferencia importa cuando el número de nodos crece. El
+          <a href="20-roadmap-y-ejercicios.html">roadmap</a> propone cerrar varias de
+          estas brechas.
+        </p>
+      </div>
+
+      <h2>Bugs corregidos</h2>
+      <p>
+        Durante el estudio se detectaron y corrigieron cuatro defectos reales en
+        <code>src/React.ts</code> (y su compilado <code>public/React.js</code>). Cada uno
+        se presenta con el código antes y después.
+      </p>
+
+      <h3>Bug 1 — Hijos falsy convertidos en texto</h3>
+      <div class="callout bug">
+        <span class="tag">Bug corregido</span>
+        <p>
+          <code>createElement</code> mapeaba todo hijo no-objeto a
+          <code>createTextElement</code>, incluidos <code>null</code>,
+          <code>undefined</code> y booleanos. Esto rompía el patrón idiomático
+          <code>{condicion &amp;&amp; &lt;Componente/&gt;}</code> (renderizaba el texto
+          "false") y, peor, un hijo nulo intermedio podía dejar un "hueco" en el array que
+          hacía a <code>reconcileChildren</code> acceder a <code>prevSibling.sibling</code>
+          con <code>prevSibling === null</code>, lanzando una excepción.
+        </p>
+      </div>
+      <div class="filename">src/React.ts — antes</div>
+      <pre><code>children: flatten(children)
+  .map((child) =&gt;
+    typeof child === 'object' ? child : createTextElement(child)
+  ),</code></pre>
+      <div class="filename">src/React.ts — después</div>
+      <pre><code>children: flatten(children)
+  // React ignora null, undefined y booleanos como hijos (permite {cond &amp;&amp; &lt;X/&gt;}).
+  .filter((child) =&gt; child != null &amp;&amp; typeof child !== 'boolean')
+  .map((child) =&gt;
+    typeof child === 'object' ? child : createTextElement(child)
+  ),</code></pre>
+
+      <h3>Bug 2 — Limpieza de estilo string</h3>
+      <div class="callout bug">
+        <span class="tag">Bug corregido</span>
+        <p>
+          En <code>updateDom</code>, al remover props viejas, la rama de
+          <code>style</code> hacía <code>Object.keys(prevProps.style)</code> asumiendo un
+          objeto. Con <code>style="background: salmon"</code> (un string),
+          <code>Object.keys</code> devuelve índices de caracteres y escribía
+          <code>dom.style["0"] = ""</code>, etc., corrompiendo la limpieza. La corrección
+          restringe esa rama a estilos que sean objetos; el string cae al
+          <code>else</code>, que limpia la propiedad completa.
+        </p>
+      </div>
+      <div class="filename">src/React.ts — antes</div>
+      <pre><code>if (name === "style") {
+  Object.keys(prevProps.style || {}).forEach(styleName =&gt; {
+    dom.style[styleName] = "";
+  });
+} else {
+  dom[name] = "";
+}</code></pre>
+      <div class="filename">src/React.ts — después</div>
+      <pre><code>if (name === "style" &amp;&amp; typeof prevProps.style === "object") {
+  Object.keys(prevProps.style || {}).forEach(styleName =&gt; {
+    dom.style[styleName] = "";
+  });
+} else {
+  dom[name] = "";
+}</code></pre>
+
+      <h3>Bug 3 — useEffect sin deps previas</h3>
+      <div class="callout bug">
+        <span class="tag">Bug corregido</span>
+        <p>
+          El cálculo de <code>hasChanged</code> leía <code>oldHook.deps[i]</code> aunque
+          el hook anterior no tuviera <code>deps</code> (por ejemplo, al pasar de
+          <code>useEffect(fn)</code> a <code>useEffect(fn, [x])</code>), lo que lanzaba al
+          indexar sobre <code>undefined</code>. La corrección añade la guarda
+          <code>(oldHook &amp;&amp; oldHook.deps)</code>: solo se comparan dependencias si
+          el render previo realmente registró un array; en otro caso el efecto se ejecuta.
+        </p>
+      </div>
+      <div class="filename">src/React.ts — antes</div>
+      <pre><code>const hasChanged = oldHook
+  ? (!deps || deps.some((dep, i) =&gt; !Object.is(dep, oldHook.deps[i])))
+  : true;</code></pre>
+      <div class="filename">src/React.ts — después</div>
+      <pre><code>const hasChanged = (oldHook &amp;&amp; oldHook.deps)
+  ? (!deps || deps.some((dep, i) =&gt; !Object.is(dep, oldHook.deps[i])))
+  : true;</code></pre>
+
+      <h3>Bug 4 — Mayúsculas en index.html</h3>
+      <div class="callout bug">
+        <span class="tag">Bug corregido</span>
+        <p>
+          <code>public/index.html</code> cargaba <code>./app.js</code> en minúscula,
+          mientras el build de Babel genera <code>App.js</code>. En sistemas de archivos
+          sensibles a mayúsculas (Linux/CI, o al servir con <code>serve</code>) el script
+          no cargaba y la app quedaba en blanco. La corrección alinea el nombre:
+          <code>./App.js</code>.
+        </p>
+      </div>
+      <div class="filename">public/index.html — antes</div>
+      <pre><code>&lt;script src="./app.js"&gt;&lt;/script&gt;</code></pre>
+      <div class="filename">public/index.html — después</div>
+      <pre><code>&lt;script src="./App.js"&gt;&lt;/script&gt;</code></pre>
+
+      <div class="callout warn">
+        <span class="tag">Cuidado</span>
+        <p>
+          El Bug 4 es especialmente insidioso porque no falla en Windows ni en macOS con
+          sus sistemas de archivos por defecto (insensibles a mayúsculas): allí
+          <code>app.js</code> y <code>App.js</code> apuntan al mismo archivo. Solo aparece
+          al desplegar en Linux o al servir con herramientas estrictas. Es un recordatorio
+          de por qué conviene probar en el mismo entorno donde se despliega.
+        </p>
+      </div>
+
+      <p>
+        Reconocidas las diferencias y saneados los defectos, el último capítulo mira hacia
+        adelante: qué falta por construir, cómo ejecutar el proyecto y qué ejercicios
+        consolidan lo aprendido.
+      </p>
+
+      <div class="pager">
+        <a href="18-ciclo-de-vida-completo.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Ciclo de vida completo</div>
+        </a>
+        <a class="next" href="20-roadmap-y-ejercicios.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Roadmap y ejercicios</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

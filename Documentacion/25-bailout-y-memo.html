@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bailout y memoización · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a class="active" href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">No re-renderizar de más</p>
+      <h1>Bailout y memoización</h1>
+      <p class="lead">
+        Un <code>setState</code> profundo no debería obligar a re-ejecutar toda la aplicación. El motor
+        se salta (<em>bailout</em>) el trabajo de cualquier fiber cuyas props no cambiaron y no tenga
+        actualizaciones pendientes, reusando su subárbol vía <code>cloneChildFibers</code>.
+      </p>
+
+      <h2>La decisión: <code>canBailout</code></h2>
+      <p>
+        Antes de ejecutar un componente, <code>beginWork</code> consulta <code>canBailout</code>. Son
+        tres condiciones que deben cumplirse todas para poder saltar el trabajo:
+      </p>
+
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>function canBailout(fiber: Fiber): boolean {
+  const current = fiber.alternate;
+  if (current === null) return false; // primer render, hay que montar
+  if (fiber.hasPendingUpdate) return false; // tiene setState pendiente
+  if (R.forceRenderDepth &gt; 0) return false; // dentro de un Provider cuyo value cambió
+  // props referencialmente iguales =&gt; misma salida garantizada
+  return fiber.props === current.props;
+}</code></pre>
+
+      <ol class="steps">
+        <li><strong>Debe existir un <code>alternate</code>.</strong> Si es el primer render, no hay
+        nada que reusar: hay que montar.</li>
+        <li><strong>No debe tener <code>hasPendingUpdate</code>.</strong> Un <code>dispatch</code> de
+        <code>useState</code> marca este flag (véase el manejo del doble buffer en
+        <a href="24-doble-buffer.html">24</a>); si está encendido, el componente <em>debe</em>
+        re-ejecutarse para procesar su cola.</li>
+        <li><strong><code>R.forceRenderDepth</code> debe ser 0.</strong> Estamos dentro de un
+        <code>Provider</code> cuyo <code>value</code> cambió: los consumidores podrían depender de él,
+        así que se fuerza el render (véase <a href="27-context-api.html">27 · Context API</a>).</li>
+      </ol>
+
+      <p>
+        La condición final es la más importante: <code>fiber.props === current.props</code>. Se compara
+        por <em>referencia</em>, no por contenido. Si el padre no re-renderizó, el mismo objeto de props
+        se reutiliza y la igualdad referencial se cumple gratis, garantizando que la salida del
+        componente será idéntica.
+      </p>
+
+      <h2>Las ramas de bailout en <code>beginWork</code></h2>
+      <p>
+        <code>beginWork</code> aplica <code>canBailout</code> tanto a los fibers estructurales (ROOT,
+        Fragment, host) como a los componentes función. Cuando el bailout procede, en lugar de
+        reconciliar se clonan los hijos y se devuelve el primero:
+      </p>
+
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>export function beginWork(fiber: Fiber): Fiber | null {
+  const type = fiber.type;
+
+  // Los providers nunca hacen bailout (deben empujar su valor siempre).
+  if (isProvider(type)) return updateContextProvider(fiber);
+
+  if (type === 'ROOT' || type === Fragment || isHostType(fiber)) {
+    if (canBailout(fiber)) {
+      cloneChildFibers(fiber.alternate as Fiber, fiber);
+      return fiber.child;
+    }
+    return type === 'ROOT' || type === Fragment
+      ? updateFragmentLike(fiber)
+      : updateHostComponent(fiber);
+  }
+
+  if (isMemo(type)) return updateMemoComponent(fiber, type);
+  if (isClassComponent(type)) return updateClassComponent(fiber);
+
+  // Componente función.
+  if (canBailout(fiber)) {
+    cloneChildFibers(fiber.alternate as Fiber, fiber);
+    return fiber.child;
+  }
+  return updateFunctionComponent(fiber);
+}</code></pre>
+
+      <p>
+        <code>cloneChildFibers</code> (detallado en <a href="24-doble-buffer.html">24</a>) reconstruye
+        los hijos wip a partir del árbol current con las mismas props, sin ejecutar ningún componente.
+        Como esos clones también tendrán props referencialmente iguales a las suyas viejas, el bailout
+        se <em>propaga</em> hacia abajo: subárboles enteros se saltan en cascada.
+      </p>
+
+      <h2>Cómo un setState re-ejecuta SOLO su componente</h2>
+      <p>
+        Este es el pago del mecanismo. Cuando llamás a <code>setState</code> en un componente hondo, el
+        render arranca desde la raíz, pero cada ancestro cuyas props no cambiaron hace bailout y clona
+        su subárbol. El único fiber con <code>hasPendingUpdate === true</code> es el que disparó el
+        <code>dispatch</code>: solo él falla <code>canBailout</code> y se re-ejecuta. Sus hermanos, con
+        props idénticas, se clonan intactos y conservan su estado.
+      </p>
+
+      <p>
+        El test <em>"un setState no re-renderiza al hermano sin cambios"</em> lo verifica de forma
+        directa: un componente <code>Stateful</code> y un <code>Sibling</code> viven bajo el mismo
+        <code>div</code>. Tras un <code>setN(5)</code>, solo <code>Stateful</code> vuelve a ejecutarse.
+      </p>
+
+      <div class="filename">src/react/__tests__/engine.test.ts</div>
+      <pre><code>test('un setState no re-renderiza al hermano sin cambios', () =&gt; {
+  let siblingRenders = 0;
+  let statefulRenders = 0;
+  let setN!: Dispatch&lt;SetStateAction&lt;number&gt;&gt;;
+  function Sibling() {
+    siblingRenders++;
+    return h('span', null, 'sib');
+  }
+  function Stateful() {
+    statefulRenders++;
+    const [n, s] = useState(0);
+    setN = s;
+    return h('span', null, String(n));
+  }
+  function App() {
+    return h('div', null, h(Stateful), h(Sibling));
+  }
+  mount(h(App));
+  expect(siblingRenders).toBe(1);
+  expect(statefulRenders).toBe(1);
+  flushSync(() =&gt; setN(5));
+  expect(statefulRenders).toBe(2);
+  expect(siblingRenders).toBe(1); // bailout: no volvió a renderizar
+});</code></pre>
+
+      <div class="diagram">flushSync(() =&gt; setN(5))
+
+   App        props ===  -&gt; canBailout  -&gt; clona hijos
+    ├─ Stateful   hasPendingUpdate=true -&gt; RE-EJECUTA  (statefulRenders: 1 -&gt; 2)
+    └─ Sibling    props ===  -&gt; canBailout -&gt; CLONA    (siblingRenders queda en 1)</div>
+
+      <h2>Memoización explícita: <code>updateMemoComponent</code> y <code>memo()</code></h2>
+      <p>
+        El bailout automático depende de la igualdad <em>referencial</em> de props. Pero si un padre se
+        re-renderiza, crea props nuevas (aunque su contenido sea el mismo), y <code>fiber.props ===
+        current.props</code> falla. Ahí entra <code>memo</code>: envuelve un componente para compararlo
+        por <em>contenido superficial</em> en lugar de por referencia.
+      </p>
+
+      <div class="filename">src/react/index.ts</div>
+      <pre><code>function shallowEqual(a: Props, b: Props): boolean {
+  if (a === b) return true;
+  const ak = Object.keys(a);
+  const bk = Object.keys(b);
+  if (ak.length !== bk.length) return false;
+  return ak.every((k) =&gt; Object.is(a[k], b[k]));
+}
+
+export function memo&lt;P extends object = Props&gt;(
+  type: FunctionComponent&lt;P&gt;,
+  compare: (prev: P, next: P) =&gt; boolean = shallowEqual as (p: P, n: P) =&gt; boolean,
+): MemoComponent&lt;P&gt; {
+  return { $$typeof: 'react.memo', type, compare };
+}</code></pre>
+
+      <p>
+        Un <code>MemoComponent</code> es un objeto marcado con <code>$$typeof: 'react.memo'</code> que
+        guarda el componente original y una función <code>compare</code>. En <code>beginWork</code>, el
+        chequeo <code>isMemo(type)</code> lo desvía a <code>updateMemoComponent</code>:
+      </p>
+
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>function updateMemoComponent(fiber: Fiber, memo: MemoComponent): Fiber | null {
+  const current = fiber.alternate;
+  if (
+    current !== null &amp;&amp;
+    !fiber.hasPendingUpdate &amp;&amp;
+    R.forceRenderDepth === 0 &amp;&amp;
+    memo.compare(current.props as Props, fiber.props)
+  ) {
+    cloneChildFibers(current, fiber);
+    return fiber.child;
+  }
+  R.wipFiber = fiber;
+  R.hookIndex = 0;
+  fiber.hooks = [];
+  fiber.hasPendingUpdate = false;
+  const child = memo.type(fiber.props);
+  collectPassiveEffects(fiber);
+  reconcileChildren(fiber, child ? [child] : []);
+  return fiber.child;
+}</code></pre>
+
+      <p>
+        Las tres primeras condiciones son las mismas de <code>canBailout</code> (hay alternate, no hay
+        update pendiente, no hay force). La cuarta reemplaza la comparación referencial por
+        <code>memo.compare(...)</code>: la comparación superficial. Si todas se cumplen, se clona el
+        subárbol y se salta la ejecución igual que en un bailout normal.
+      </p>
+
+      <h2>Bailout automático vs. <code>memo</code></h2>
+      <table>
+        <thead>
+          <tr><th></th><th>Bailout automático</th><th><code>memo()</code></th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Comparación</td><td>Referencial (<code>props === props</code>)</td><td>Superficial (<code>Object.is</code> clave por clave)</td></tr>
+          <tr><td>Cuándo aplica</td><td>Cuando el padre <em>no</em> re-renderizó y reusa el mismo objeto de props</td><td>Cuando el padre <em>sí</em> re-renderizó pero produjo props con el mismo contenido</td></tr>
+          <tr><td>Costo</td><td>Cero (una comparación de punteros)</td><td>Recorre las claves de props una vez</td></tr>
+          <tr><td>Se activa</td><td>Siempre, sin envolver nada</td><td>Solo si envolvés el componente con <code>React.memo</code></td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout ok">
+        <span class="tag">La complementariedad</span>
+        <p>
+          Los dos mecanismos cubren casos distintos. El bailout automático hace que un
+          <code>setState</code> hondo no toque los hermanos cuyo padre común no cambió las props.
+          <code>memo</code> extiende ese ahorro a los casos donde el padre <em>sí</em> se re-renderizó
+          pero el hijo recibe datos equivalentes. Combinados con <code>useMemo</code> y
+          <code>useCallback</code> (para mantener referencias estables en props de objeto o función),
+          permiten podar re-renders con precisión quirúrgica.
+        </p>
+      </div>
+
+      <div class="pager">
+        <a href="24-doble-buffer.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Doble buffer</div>
+        </a>
+        <a class="next" href="26-batching-flushsync.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Batching y flushSync</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

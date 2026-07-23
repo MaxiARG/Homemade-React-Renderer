@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fragment y Error Boundaries · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a class="active" href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Agrupar sin nodo + capturar errores</p>
+      <h1>Fragment y Error Boundaries</h1>
+      <p class="lead">Dos mecanismos que comparten una idea: intervenir en la estructura del árbol de fibers sin ensuciar el DOM. El <code>Fragment</code> agrupa hijos sin crear un nodo contenedor; los Error Boundaries capturan excepciones de un subárbol y las convierten en una UI de reemplazo, todo sin abandonar el render en curso.</p>
+
+      <h2>Parte 1 · Fragment</h2>
+
+      <h3>Un símbolo, no un componente</h3>
+      <p>Un <code>Fragment</code> no es una función ni una clase: es un símbolo único, comparable por identidad. Vive en <code>types.ts</code> junto al resto de las etiquetas del motor.</p>
+      <div class="filename">src/react/types.ts</div>
+      <pre><code>/** Símbolo único que identifica un Fragment (`&lt;&gt;...&lt;/&gt;`). */
+export const Fragment = Symbol('React.Fragment');
+export type FragmentType = typeof Fragment;</code></pre>
+      <p>Al ser un <code>Symbol</code>, dos referencias a <code>Fragment</code> siempre son la misma (<code>Fragment === Fragment</code>), lo que permite reconocerlo con una comparación estricta durante la reconciliación. <code>element.ts</code> lo reexporta para que el usuario lo escriba como <code>type</code> de un elemento (y el pragma <code>React.Fragment</code> del JSX apunte aquí):</p>
+      <div class="filename">src/react/element.ts</div>
+      <pre><code>import {
+  Fragment,
+  TEXT_ELEMENT,
+  // ...
+} from './types.js';
+
+export { Fragment };</code></pre>
+
+      <h3>Un fiber que no crea DOM</h3>
+      <p>La clave está en <code>beginWork</code>. El Fragment se agrupa con los fibers <em>estructurales</em> (el <code>ROOT</code> y los host), pero mientras un host component crea su nodo con <code>createDom</code>, el Fragment no toca el DOM en absoluto: solo reconcilia sus hijos.</p>
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>export function beginWork(fiber: Fiber): Fiber | null {
+  const type = fiber.type;
+
+  if (isProvider(type)) return updateContextProvider(fiber);
+
+  if (type === 'ROOT' || type === Fragment || isHostType(fiber)) {
+    // Fibers "estructurales": intentan bailout por props referenciales.
+    if (canBailout(fiber)) {
+      cloneChildFibers(fiber.alternate as Fiber, fiber);
+      return fiber.child;
+    }
+    return type === 'ROOT' || type === Fragment
+      ? updateFragmentLike(fiber)
+      : updateHostComponent(fiber);
+  }
+  // ...
+}</code></pre>
+      <p>El trabajo real es mínimo. <code>updateFragmentLike</code> reconcilia <code>props.children</code> directamente contra el árbol anterior y devuelve el primer hijo, sin instanciar ningún nodo:</p>
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>function updateFragmentLike(fiber: Fiber): Fiber | null {
+  reconcileChildren(fiber, fiber.props.children ?? []);
+  return fiber.child;
+}</code></pre>
+      <p>Compará con <code>updateHostComponent</code>, que hace lo mismo pero antes crea (o reutiliza) el nodo del DOM. Que el Fragment comparta código con el <code>ROOT</code> no es casualidad: ambos son contenedores lógicos sin nodo propio. Por eso el mismo <code>updateFragmentLike</code> sirve para los dos.</p>
+
+      <h3>Cómo llegan sus hijos al DOM</h3>
+      <p>Si el Fragment no tiene nodo, ¿dónde se insertan sus hijos? La respuesta está en la commit phase. Cuando hay que colocar un subárbol, <code>placeNode</code> distingue entre fibers host (que aportan un <code>dom</code>) y todo lo demás (Fragment, función, clase), que <strong>no aporta nodo</strong> y por lo tanto delega en sus hijos:</p>
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>function placeNode(fiber: Fiber, parentDom: DomNode, before: DomNode | null): void {
+  if (isHostType(fiber)) {
+    if (fiber.dom) {
+      if (before) parentDom.insertBefore(fiber.dom, before);
+      else parentDom.appendChild(fiber.dom);
+    }
+  } else {
+    // Fragment / función / clase: colocar sus hijos host.
+    let child = fiber.child;
+    while (child) {
+      placeNode(child, parentDom, before);
+      child = child.sibling;
+    }
+  }
+}</code></pre>
+      <p>El efecto es que los hijos de un Fragment se cuelgan del mismo padre DOM que colgaría al Fragment, uno tras otro, como si el Fragment no existiera. Lo mismo hace <code>getHostParentDom</code> al subir buscando el primer ancestro con <code>dom</code>: los fibers Fragment se saltan porque su <code>dom</code> es <code>null</code>.</p>
+      <div class="diagram">
+Árbol de fibers                 DOM resultante
+
+&lt;ul&gt; (host, dom=UL)             &lt;ul&gt;
+  └ Fragment (dom=null)            &lt;li&gt;a&lt;/li&gt;
+       ├ &lt;li&gt;a&lt;/li&gt;    ───────▶   &lt;li&gt;b&lt;/li&gt;
+       └ &lt;li&gt;b&lt;/li&gt;              &lt;/ul&gt;
+
+El Fragment desaparece: sus &lt;li&gt; se insertan
+directamente bajo el &lt;ul&gt; (primer ancestro con dom).</div>
+      <div class="callout info"><span class="tag">Igual que React</span><p>En React, <code>&lt;&gt;...&lt;/&gt;</code> tampoco produce un nodo del DOM. La diferencia práctica es que este motor no soporta <code>key</code> en la sintaxis corta; para keyed lists se usan elementos host o componentes con <code>key</code>, como muestra el capítulo de <a href="23-reconciliacion-por-key.html">reconciliación por key</a>.</p></div>
+
+      <h2>Parte 2 · Error Boundaries</h2>
+
+      <h3>La clase base <code>Component</code></h3>
+      <p>Los Error Boundaries requieren un componente de clase, porque necesitan un lugar donde vivir el manejador de error y el estado de fallback. El motor ofrece una clase base mínima al estilo React en <code>component.ts</code>:</p>
+      <div class="filename">src/react/component.ts</div>
+      <pre><code>export abstract class Component&lt;
+  P extends object = Props,
+  S extends Record&lt;string, unknown&gt; = Record&lt;string, unknown&gt;,
+&gt; implements ComponentInstance&lt;P&gt; {
+  static isReactComponent = true;
+
+  props: P;
+  state: S;
+  _fiber?: Fiber;
+
+  constructor(props: P) {
+    this.props = props;
+    this.state = {} as S;
+  }
+
+  setState(partial: Partial&lt;S&gt;): void {
+    this.state = { ...this.state, ...(partial as S) };
+    if (this._fiber) {
+      this._fiber.hasPendingUpdate = true;
+      scheduleUpdate(this._fiber);
+    }
+  }
+
+  abstract render(): ReactElement | null;
+}</code></pre>
+      <p>La marca estática <code>isReactComponent = true</code> es lo que permite reconocer una clase durante la reconciliación (JavaScript no distingue funciones de constructores por sí solo). Sobre ella se apoyan dos predicados:</p>
+      <div class="filename">src/react/component.ts</div>
+      <pre><code>export function isClassComponent(type: unknown): /* ... */ {
+  return (
+    typeof type === 'function' &&
+    (type as { isReactComponent?: boolean }).isReactComponent === true
+  );
+}
+
+export function isErrorBoundary(fiber: Fiber): boolean {
+  const type = fiber.type as {
+    getDerivedStateFromError?: unknown;
+    prototype?: { componentDidCatch?: unknown };
+  };
+  return (
+    isClassComponent(fiber.type) &&
+    (typeof type.getDerivedStateFromError === 'function' ||
+      typeof type.prototype?.componentDidCatch === 'function')
+  );
+}</code></pre>
+      <p>Un componente de clase es un Error Boundary solo si define <code>getDerivedStateFromError</code> (método estático que deriva el nuevo estado a partir del error) o <code>componentDidCatch</code> (método de instancia para efectos secundarios, como loggear). La misma lógica se replica en <code>reconciler.ts</code> para no crear una dependencia circular con el scheduler.</p>
+
+      <h3>Instanciación y memoria de la pila</h3>
+      <p>Cuando <code>beginWork</code> detecta una clase, delega en <code>updateClassComponent</code>, que crea la instancia una sola vez (la guarda en <code>fiber.stateNode</code>), la enlaza al fiber con <code>_fiber</code> y llama a <code>render()</code>. El detalle crucial para los boundaries: <strong>antes</strong> de renderizar, si el fiber es un boundary, guarda la profundidad de la pila de contextos y de <code>forceRenderDepth</code>.</p>
+      <div class="filename">src/react/reconciler.ts</div>
+      <pre><code>function updateClassComponent(fiber: Fiber): Fiber | null {
+  let instance = fiber.stateNode;
+  if (instance === null) {
+    instance = new Ctor(fiber.props);
+    fiber.stateNode = instance;
+  }
+  instance.props = fiber.props;
+  instance._fiber = fiber;
+  fiber.hasPendingUpdate = false;
+
+  // Los error boundaries recuerdan el estado de la pila de contextos para
+  // poder restaurarlo si un descendiente lanza una excepción.
+  if (isErrorBoundary(fiber)) {
+    fiber.ctxDepth = contextStack.length;
+    fiber.forceDepth = R.forceRenderDepth;
+  }
+
+  const child = instance.render();
+  reconcileChildren(fiber, child ? [child] : []);
+  return fiber.child;
+}</code></pre>
+      <p>¿Por qué guardar <code>ctxDepth</code> y <code>forceDepth</code>? Porque cuando un descendiente lanza, el render se abandona a mitad de camino: puede haber Providers que empujaron valores a <code>contextStack</code> e incrementaron <code>forceRenderDepth</code> sin que su <code>completeWork</code> (que hace el <code>pop</code>) llegara a ejecutarse. Sin restaurar esas pilas, el estado global quedaría corrupto para el resto del árbol.</p>
+
+      <h3>Captura: <code>workLoopSync</code> + <code>handleRenderError</code></h3>
+      <p>El bucle de trabajo síncrono envuelve cada <code>performUnitOfWork</code> en un <code>try/catch</code>. Cualquier excepción durante el render de un fiber se desvía a <code>handleRenderError</code> en lugar de romper el flush.</p>
+      <div class="filename">src/react/scheduler.ts</div>
+      <pre><code>function workLoopSync(root: RootStateContainer): void {
+  while (root.nextUnitOfWork) {
+    try {
+      root.nextUnitOfWork = performUnitOfWork(root.nextUnitOfWork);
+    } catch (error) {
+      handleRenderError(root, error);
+    }
+  }
+}</code></pre>
+      <p><code>handleRenderError</code> sube desde el fiber que falló buscando el boundary más cercano, restaura las pilas, aplica el estado derivado y reprograma el subárbol del boundary para renderizarlo de nuevo, ahora con el fallback:</p>
+      <div class="filename">src/react/scheduler.ts</div>
+      <pre><code>function handleRenderError(root: RootStateContainer, error: unknown): void {
+  const failing = root.nextUnitOfWork;
+  let boundary: Fiber | null = failing ? failing.parent : null;
+  while (boundary &amp;&amp; !(boundary.stateNode &amp;&amp; isErrorBoundary(boundary))) {
+    boundary = boundary.parent;
+  }
+  if (!boundary) {
+    R.activeRoot = null;
+    throw error; // sin boundary: el error se propaga
+  }
+
+  // Restaurar la pila de contextos al punto en que empezó el boundary.
+  contextStack.length = boundary.ctxDepth;
+  R.forceRenderDepth = boundary.forceDepth;
+
+  const instance = boundary.stateNode as ComponentInstance;
+  const Ctor = boundary.type as {
+    getDerivedStateFromError?: (e: unknown) =&gt; object;
+  };
+  const derived =
+    typeof Ctor.getDerivedStateFromError === 'function'
+      ? Ctor.getDerivedStateFromError(error)
+      : {};
+  instance.state = { ...instance.state, ...(derived as Record&lt;string, unknown&gt;) };
+  if (typeof instance.componentDidCatch === 'function') {
+    instance.componentDidCatch(error, { componentStack: '' });
+  }
+
+  // Re-renderizar SOLO el subárbol del boundary con el estado de fallback.
+  boundary.child = null;
+  boundary.hasPendingUpdate = true;
+  root.nextUnitOfWork = boundary;
+}</code></pre>
+      <ol class="steps">
+        <li><strong>Búsqueda hacia arriba.</strong> Desde <code>failing.parent</code> se recorren los <code>parent</code> hasta hallar un fiber con <code>stateNode</code> instanciado que además sea Error Boundary.</li>
+        <li><strong>Sin boundary.</strong> Si no hay ninguno, el error se relanza y sale del motor: como en React, un error no capturado desmonta la app.</li>
+        <li><strong>Restauración de pilas.</strong> <code>contextStack.length = boundary.ctxDepth</code> descarta las entradas empujadas por Providers a medio completar, y <code>forceRenderDepth</code> vuelve a su valor guardado.</li>
+        <li><strong>Estado derivado.</strong> Se fusiona el resultado de <code>getDerivedStateFromError(error)</code> en <code>instance.state</code>, y si existe se llama a <code>componentDidCatch</code> para efectos.</li>
+        <li><strong>Re-render acotado.</strong> Se limpia <code>boundary.child</code>, se marca <code>hasPendingUpdate</code> y se apunta <code>nextUnitOfWork</code> al propio boundary: el <code>while</code> del <code>workLoopSync</code> continúa y vuelve a entrar al boundary, que ahora renderiza el fallback.</li>
+      </ol>
+
+      <h3>El test que lo verifica</h3>
+      <p>La batería de tests incluye un caso directo: un <code>Boundary</code> con <code>getDerivedStateFromError</code> que envuelve un componente <code>Boom</code> cuyo render lanza. El resultado esperado es que el DOM muestre el fallback, no la excepción.</p>
+      <div class="filename">src/react/__tests__/engine.test.ts</div>
+      <pre><code>class Boundary extends Component&lt;{ children?: ReactElement[] }, { failed: boolean }&gt; {
+  constructor(props: { children?: ReactElement[] }) {
+    super(props);
+    this.state = { failed: false };
+  }
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    if (this.state.failed) return h('p', null, 'fallback');
+    return h('div', null, this.props.children as unknown as ReactElement);
+  }
+}
+function Boom(): ReactElement {
+  throw new Error('boom');
+}
+const { container } = mount(h(Boundary, null, h(Boom)));
+expect(container.textContent).toBe('fallback'); // ✓</code></pre>
+
+      <h3>Flujo de propagación del error</h3>
+      <div class="diagram">
+performUnitOfWork(Boom)  ──lanza──▶  Error('boom')
+        │                                │
+        │                          workLoopSync try/catch
+        ▼                                │
+   handleRenderError(root, error)  ◀─────┘
+        │
+        │ 1. boundary = Boom.parent ... sube por .parent
+        │      hasta isErrorBoundary === true
+        ▼
+   [Boundary encontrado]
+        │
+        │ 2. contextStack.length = boundary.ctxDepth
+        │    forceRenderDepth     = boundary.forceDepth
+        │ 3. state = { ...state, ...getDerivedStateFromError(error) }
+        │    componentDidCatch(error, info)?
+        │ 4. boundary.child = null; hasPendingUpdate = true
+        ▼
+   nextUnitOfWork = boundary
+        │
+        ▼
+   workLoopSync sigue ─▶ beginWork(Boundary)
+                          render() ve state.failed → &lt;p&gt;fallback&lt;/p&gt;
+                          commit ▶ el DOM muestra el fallback</div>
+
+      <div class="callout warn"><span class="tag">Los boundaries son solo de clase</span><p>Igual que en React, un componente función <strong>no</strong> puede ser Error Boundary: no hay equivalente en hooks a <code>getDerivedStateFromError</code>/<code>componentDidCatch</code>. El predicado <code>isErrorBoundary</code> exige <code>isReactComponent === true</code> (una clase que extiende <code>Component</code>) y al menos uno de esos dos manejadores. Un try/catch en el render de una función no captura errores de sus hijos, porque esos hijos se renderizan más tarde, en otra iteración del <code>workLoopSync</code>.</p></div>
+
+      <div class="callout ok"><span class="tag">Alcance de la recuperación</span><p>La captura re-renderiza <strong>solo</strong> el subárbol del boundary (<code>nextUnitOfWork = boundary</code>), no todo el root. El resto del árbol ya comprometido no se ve afectado, y las pilas restauradas garantizan que los hermanos que aún faltan procesar vean el contexto correcto.</p></div>
+
+      <div class="pager">
+        <a href="27-context-api.html"><div class="dir">← Anterior</div><div class="lbl">Context API</div></a>
+        <a class="next" href="29-testing-jest.html"><div class="dir">Siguiente →</div><div class="lbl">Testing con Jest</div></a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

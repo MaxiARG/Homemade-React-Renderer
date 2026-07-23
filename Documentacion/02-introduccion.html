@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Introducción y objetivos · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a class="active" href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Punto de partida</p>
+      <h1>Introducción y objetivos</h1>
+      <p class="lead">
+        Este proyecto es un estudio del funcionamiento interno de React: una
+        reimplementación mínima y legible de su motor de renderizado, construida para
+        <em>entenderlo</em>, no para reemplazarlo.
+      </p>
+
+      <h2>¿Qué es este proyecto?</h2>
+      <p>
+        <strong>Homemade React Renderer</strong> es un clon académico del núcleo de React
+        escrito en TypeScript. Su propósito no es competir con la librería oficial, sino
+        exponer, en unas pocas centenas de líneas, los mecanismos que React esconde tras su
+        API pública. Como dice el propio <code>Readme.md</code> del repositorio, es
+        <em>«a study of how React works internally, inspired by its architecture and
+        execution model»</em>. Todo el motor vive en un único archivo,
+        <code>src/React.ts</code>, que sirve como fuente de verdad a lo largo de toda esta
+        documentación.
+      </p>
+      <p>
+        El trabajo está inspirado en la serie <em>«Build your own React»</em> y su proyecto
+        didáctico <strong>Didact</strong>, de Rodrigo Pombo. De ahí provienen la nomenclatura
+        (<code>wipRoot</code>, <code>nextUnitOfWork</code>, <code>reconcileChildren</code>) y
+        la estrategia general: reconstruir el modelo <em>Fiber</em> y el <em>scheduler</em>
+        cooperativo desde cero, paso a paso, para que cada decisión de diseño quede a la vista.
+      </p>
+
+      <h2>Filosofía</h2>
+      <p>
+        La premisa es que la mejor forma de comprender una abstracción es reconstruirla. React
+        oculta deliberadamente su maquinaria; aquí la exponemos. El código prioriza la
+        <strong>claridad sobre el rendimiento</strong>: no hay optimizaciones que compliquen la
+        lectura, y muchos comentarios del fuente explican el <em>porqué</em> de cada línea. El
+        objetivo es que quien lea <code>src/React.ts</code> pueda seguir un render completo con
+        el dedo, desde el JSX hasta la mutación final del DOM.
+      </p>
+
+      <div class="callout info">
+        <span class="tag">Nota</span>
+        <p>
+          Cada capítulo enlaza el concepto abstracto de React real con una porción concreta y
+          citada del código del proyecto. Cuando algo diverge del React oficial, se marca de
+          forma explícita (véase <a href="19-diferencias-y-bugs.html">19 · Diferencias con
+          React y bugs</a>).
+        </p>
+      </div>
+
+      <h2>¿Qué implementa?</h2>
+      <p>
+        A pesar de su tamaño, el motor cubre el camino completo de un render y varias piezas
+        del sistema de <em>hooks</em>:
+      </p>
+      <ul>
+        <li>
+          <strong><code>createElement</code></strong>: convierte los nodos JSX en objetos
+          <code>Element</code> planos, con <code>type</code> y <code>props</code>.
+        </li>
+        <li>
+          <strong>Árbol de <em>fibers</em></strong>: cada elemento se transforma en una unidad
+          de trabajo enlazada por <code>child</code>, <code>sibling</code> y <code>parent</code>.
+        </li>
+        <li>
+          <strong><em>Scheduler</em> cooperativo</strong>: el <code>workLoop</code> troceado
+          sobre <span class="tag-pill">requestIdleCallback</span> que cede el control al
+          navegador para no bloquear la interfaz.
+        </li>
+        <li>
+          <strong>Reconciliación (<em>diffing</em>)</strong>: <code>reconcileChildren</code>
+          compara el árbol nuevo con el <code>alternate</code> anterior y asigna
+          <code>effectTag</code> (<code>PLACEMENT</code>, <code>UPDATE</code>,
+          <code>DELETION</code>).
+        </li>
+        <li>
+          <strong><em>Commit</em> al DOM</strong>: <code>commitRoot</code> y
+          <code>commitWork</code> aplican de una sola vez los cambios calculados.
+        </li>
+        <li>
+          <strong><em>Hooks</em></strong>: <code>useState</code> (con cola de acciones y
+          re-render) y <code>useEffect</code> (con dependencias y <em>cleanup</em>).
+        </li>
+        <li>
+          <strong>Estilos inline</strong>: soporte tanto para objetos de estilo como para
+          cadenas, gestionado en <code>updateDom</code>.
+        </li>
+        <li>
+          <strong><em>Flattening</em> de children</strong>: aplanado de arrays anidados para
+          soportar patrones como <code>{lista.map(...)}</code>.
+        </li>
+      </ul>
+
+      <p>
+        Todas estas piezas se apoyan en un pequeño conjunto de variables globales mutables que
+        actúan como estado del renderer:
+      </p>
+
+      <div class="filename">src/React.ts</div>
+      <pre><code>let wipFiber = null
+let hookIndex = null
+let nextUnitOfWork = null
+let wipRoot = null
+let currentRoot = null
+let deletions = null;
+let wipEffects = []; // Global para recolectar efectos</code></pre>
+
+      <h2>Alcance y no-objetivos</h2>
+      <p>
+        Es fundamental fijar los límites. Este renderer <strong>no está pensado para
+        producción</strong>. Reconstruye el árbol completo en cada actualización, no implementa
+        reconciliación por <code>key</code>, mantiene los efectos en una lista global
+        (<code>wipEffects</code>) compartida entre componentes, y referencia
+        <code>React.Fragment</code> en la configuración sin llegar a implementarlo. No hay
+        <em>batching</em> de actualizaciones, ni prioridades, ni portales, ni contexto, ni
+        <em>Suspense</em>. Estas ausencias no son descuidos: son la frontera deliberada entre
+        «entender React» y «reescribir React».
+      </p>
+
+      <div class="callout warn">
+        <span class="tag">Cuidado</span>
+        <p>
+          No utilices este motor en una aplicación real. Su valor es pedagógico: cada atajo que
+          toma es una oportunidad para razonar sobre qué hace React de verdad y por qué. El
+          capítulo <a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a> propone
+          extensiones para quien quiera acercarlo más al original.
+        </p>
+      </div>
+
+      <h2>Público objetivo</h2>
+      <p>
+        Esta documentación se dirige a personas que ya usan React y quieren mirar debajo del
+        capó: estudiantes de ingeniería de software, desarrolladores que preparan entrevistas
+        técnicas sobre el modelo Fiber, y curiosos que se preguntan qué ocurre entre
+        <code>setState</code> y el repintado de la pantalla. Se asume familiaridad con
+        JavaScript, JSX y el concepto general de componentes, pero no con las interioridades de
+        React.
+      </p>
+
+      <h2>¿Qué preguntas responde esta documentación?</h2>
+      <p>
+        A lo largo de los veinte capítulos encontrarás respuesta a interrogantes como: ¿cómo se
+        convierte una etiqueta JSX en una llamada a función? ¿qué es exactamente un
+        <em>fiber</em> y cómo se recorre? ¿cómo puede React interrumpir y reanudar un render sin
+        dejar la interfaz a medias? ¿cómo «recuerda» <code>useState</code> su valor entre
+        renders si es solo una función? ¿por qué los efectos se ejecutan <em>después</em> de
+        pintar? y ¿en qué se diferencia todo esto del React real? Empezamos en el siguiente
+        capítulo con la vista de pájaro de la <a href="03-arquitectura.html">arquitectura
+        general</a>.
+      </p>
+
+      <div class="pager">
+        <a href="01-portada.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Portada e índice</div>
+        </a>
+        <a class="next" href="03-arquitectura.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Arquitectura general</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

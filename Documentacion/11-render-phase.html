@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Render phase · Homemade React Renderer</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <a class="brand" href="01-portada.html">Homemade <span>React</span></a>
+    <h2>Fundamentos</h2>
+    <ol>
+      <li><a href="01-portada.html">01 · Portada e índice</a></li>
+      <li><a href="02-introduccion.html">02 · Introducción y objetivos</a></li>
+      <li><a href="03-arquitectura.html">03 · Arquitectura general</a></li>
+      <li><a href="04-tooling-babel-typescript.html">04 · Tooling: Babel + TypeScript</a></li>
+      <li><a href="05-jsx-y-pragma.html">05 · JSX y el pragma</a></li>
+      <li><a href="06-createelement-y-flattening.html">06 · createElement y flattening</a></li>
+      <li><a href="07-nodos-de-texto.html">07 · Nodos de texto</a></li>
+      <li><a href="08-estructura-fiber.html">08 · La estructura Fiber</a></li>
+      <li><a href="09-recorrido-del-arbol.html">09 · Recorrido del árbol</a></li>
+      <li><a href="10-scheduler-workloop.html">10 · Scheduler y workLoop</a></li>
+      <li><a class="active" href="11-render-phase.html">11 · Render phase</a></li>
+      <li><a href="12-reconciliacion.html">12 · Reconciliación (diffing)</a></li>
+      <li><a href="13-effect-tags.html">13 · Effect tags</a></li>
+      <li><a href="14-commit-phase.html">14 · Commit phase</a></li>
+      <li><a href="15-updatedom-props-eventos-estilos.html">15 · updateDom</a></li>
+      <li><a href="16-usestate.html">16 · Hook useState</a></li>
+      <li><a href="17-useeffect-y-cleanup.html">17 · Hook useEffect</a></li>
+      <li><a href="18-ciclo-de-vida-completo.html">18 · Ciclo de vida completo</a></li>
+      <li><a href="19-diferencias-y-bugs.html">19 · Diferencias y bugs</a></li>
+      <li><a href="20-roadmap-y-ejercicios.html">20 · Roadmap y ejercicios</a></li>
+    </ol>
+    <h2>Motor v2 · Arquitectura y features</h2>
+    <ol>
+      <li><a href="21-refactor-modulos-roots.html">21 · Refactor: módulos y roots</a></li>
+      <li><a href="22-tipado-completo.html">22 · Tipado completo (adiós any)</a></li>
+      <li><a href="23-reconciliacion-por-key.html">23 · Reconciliación por key</a></li>
+      <li><a href="24-doble-buffer.html">24 · Doble buffer (alternate)</a></li>
+      <li><a href="25-bailout-y-memo.html">25 · Bailout y memoización</a></li>
+      <li><a href="26-batching-flushsync.html">26 · Batching y flushSync</a></li>
+      <li><a href="27-context-api.html">27 · Context API</a></li>
+      <li><a href="28-fragment-y-error-boundaries.html">28 · Fragment y Error Boundaries</a></li>
+      <li><a href="29-testing-jest.html">29 · Testing con Jest</a></li>
+    </ol>
+    <h2>Ciclo de vida de Hooks</h2>
+    <ol>
+      <li><a href="30-hook-usestate.html">30 · useState — ciclo de vida</a></li>
+      <li><a href="31-hook-usereducer.html">31 · useReducer — ciclo de vida</a></li>
+      <li><a href="32-hook-useref.html">32 · useRef — ciclo de vida</a></li>
+      <li><a href="33-hook-usememo.html">33 · useMemo — ciclo de vida</a></li>
+      <li><a href="34-hook-usecallback.html">34 · useCallback — ciclo de vida</a></li>
+      <li><a href="35-hook-useeffect.html">35 · useEffect — ciclo de vida</a></li>
+      <li><a href="36-hook-usecontext.html">36 · useContext — ciclo de vida</a></li>
+    </ol>
+  </nav>
+
+  <main class="content">
+    <article class="article">
+      <p class="eyebrow">Calcular sin tocar el DOM</p>
+      <h1>Render phase</h1>
+      <p class="lead">
+        La <em>render phase</em> es la etapa donde el motor procesa cada fiber, ejecuta
+        los componentes de función y calcula qué debe cambiar, pero <strong>sin mutar
+        el DOM real</strong>. Todo el trabajo ocurre en memoria y puede interrumpirse.
+      </p>
+
+      <h2>El corazón: performUnitOfWork</h2>
+      <p>
+        El <a href="10-scheduler-workloop.html">workLoop</a> procesa el árbol una unidad
+        a la vez. Cada unidad es un fiber, y la función que lo procesa es
+        <code>performUnitOfWork</code>. Su primera responsabilidad es decidir de qué
+        <em>clase</em> de componente se trata para elegir la rama de procesamiento; su
+        segunda responsabilidad es devolver el siguiente fiber a procesar (child, luego
+        sibling, luego subiendo por los parents).
+      </p>
+
+      <div class="filename">src/React.ts</div>
+      <pre><code>function performUnitOfWork(fiber) {
+  const isFunctionComponent = fiber.type instanceof Function
+  if (isFunctionComponent) {
+    updateFunctionComponent(fiber)
+  } else {
+    updateHostComponent(fiber)
+  }
+  // Return  next unit of work
+  //Finally we search for the next unit of work. We first try with the child, then with the sibling, then with the uncle, and so on.
+  if (fiber.child) {
+    return fiber.child
+  }
+  let nextFiber = fiber
+  while (nextFiber) {
+    if (nextFiber.sibling) {
+      return nextFiber.sibling
+    }
+    nextFiber = nextFiber.parent
+  }
+}</code></pre>
+
+      <h2>La bifurcación: función vs. host</h2>
+      <p>
+        La discriminación es notablemente simple:
+        <code>const isFunctionComponent = fiber.type instanceof Function</code>. Cuando
+        escribimos <code>&lt;Counter /&gt;</code>, el <a href="05-jsx-y-pragma.html">pragma
+        createElement</a> guarda en <code>fiber.type</code> la <em>referencia a la función</em>
+        <code>Counter</code>, no una cadena. En cambio, cuando escribimos
+        <code>&lt;div&gt;</code>, <code>fiber.type</code> es el string <code>"div"</code>.
+        Así, <code>fiber.type instanceof Function</code> distingue con exactitud entre un
+        componente de función (a ejecutar) y un componente anfitrión (<em>host</em>, un
+        nodo del DOM). Según el resultado se toma una de dos ramas mutuamente excluyentes:
+        <code>updateFunctionComponent</code> o <code>updateHostComponent</code>.
+      </p>
+
+      <div class="callout info">
+        <span class="tag">Nota</span>
+        <p>
+          Un componente de función <strong>no tiene DOM propio</strong>. Su cometido es
+          producir hijos ejecutándose; el DOM lo aportan los host components que aparezcan
+          en lo que retorna.
+        </p>
+      </div>
+
+      <h2>Rama 1: updateFunctionComponent</h2>
+      <p>
+        Antes de ejecutar el componente hay que preparar el terreno para los hooks. Se fija
+        el <em>work in progress fiber</em> global (<code>wipFiber = fiber</code>), se resetea
+        el contador de hooks a cero (<code>hookIndex = 0</code>) y se inicializa una lista
+        vacía de hooks en el propio fiber (<code>wipFiber.hooks = []</code>). Esta
+        preparación es la que permite que <a href="16-usestate.html">useState</a> y
+        <code>useEffect</code> sepan a qué fiber pertenecen y en qué posición van.
+      </p>
+
+      <div class="filename">src/React.ts</div>
+      <pre><code>function updateFunctionComponent(fiber) {
+  wipFiber = fiber
+  hookIndex = 0
+  wipFiber.hooks = []
+  const children = [fiber.type(fiber.props)]
+  reconcileChildren(fiber, children)
+  // ...recolección de efectos...
+}</code></pre>
+
+      <p>
+        La línea decisiva es <code>const children = [fiber.type(fiber.props)]</code>:
+        aquí se <strong>ejecuta la función del componente</strong>. Como
+        <code>fiber.type</code> es <code>Counter</code>, esto equivale a llamar
+        <code>Counter(fiber.props)</code>, lo que corre su cuerpo (incluidos los
+        <code>useState</code>/<code>useEffect</code>) y devuelve el elemento JSX que retorna.
+        Ese resultado único se envuelve en un array y se pasa a
+        <a href="12-reconciliacion.html">reconcileChildren</a>, que lo compara contra el
+        árbol anterior. A diferencia de un host component, aquí los hijos <em>provienen de
+        correr la función</em>, no de leerlos directamente de las props.
+      </p>
+
+      <h2>Rama 2: updateHostComponent</h2>
+      <p>
+        Para un nodo del DOM el trabajo es distinto. Si el fiber todavía no tiene un nodo
+        asociado (<code>!fiber.dom</code>), se crea con <code>createDom(fiber)</code>; luego
+        se reconcilia contra <code>fiber.props.children</code>, es decir, los hijos que ya
+        venían en las props.
+      </p>
+
+      <div class="filename">src/React.ts</div>
+      <pre><code>function updateHostComponent(fiber) {
+  if (!fiber.dom) {
+    fiber.dom = createDom(fiber)
+  }
+  reconcileChildren(fiber, fiber.props.children)
+}</code></pre>
+
+      <h2>Punto crucial: crear no es montar</h2>
+      <p>
+        Aquí se concentra la idea central de la fase. <code>createDom</code> efectivamente
+        llama a <code>document.createElement(fiber.type)</code> (o
+        <code>createTextNode</code>), pero el nodo resultante queda <strong>flotando en
+        memoria</strong>: nunca se hace <code>appendChild</code> sobre el documento. La
+        creación del nodo y la aplicación de sus props inicial ocurren, pero la
+        <em>inserción</em> en el árbol visible se pospone. Esa mutación real del DOM sucede
+        más tarde, toda de golpe, en la <a href="14-commit-phase.html">commit phase</a>.
+      </p>
+
+      <div class="callout ok">
+        <span class="tag">Idea clave</span>
+        <p>
+          La render phase es <strong>interrumpible</strong> precisamente porque no toca el
+          DOM visible. Si el navegador corta el trabajo a la mitad, el usuario nunca ve una
+          UI incompleta: solo se descartan nodos que aún vivían en memoria. La coherencia
+          se garantiza porque <code>commitRoot</code> solo corre cuando
+          <code>nextUnitOfWork</code> se agotó, es decir, cuando todo el árbol ya fue
+          calculado.
+        </p>
+      </div>
+
+      <p>
+        En resumen, la render phase recorre fiber por fiber, ejecuta los componentes de
+        función para obtener sus hijos, crea (sin insertar) los nodos que faltan y delega
+        en la reconciliación el cálculo de las diferencias que después aplicará el commit.
+      </p>
+
+      <div class="pager">
+        <a href="10-scheduler-workloop.html">
+          <div class="dir">← Anterior</div>
+          <div class="lbl">Scheduler y workLoop</div>
+        </a>
+        <a class="next" href="12-reconciliacion.html">
+          <div class="dir">Siguiente →</div>
+          <div class="lbl">Reconciliación (diffing)</div>
+        </a>
+      </div>
+    </article>
+  </main>
+</div>
+</body>
+</html>
